@@ -2,9 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const { connectDB } = require('./config/database');
-const { handlePvpCommand, handleJoinDuel } = require('./handlers/commandHandler');
-const User = require('./models/User');
-const Duel = require('./models/Duel');
+const { 
+  handleStartCommand, 
+  handlePointsCommand, 
+  handlePvpCommand, 
+  handleJoinDuel 
+} = require('./handlers/commandHandler');
 const http = require('http');
 const socketIo = require('socket.io');
 
@@ -14,7 +17,10 @@ const io = socketIo(server);
 const PORT = process.env.PORT || 3000;
 
 // Configurar bot de Telegram
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { 
+  polling: true,
+  onlyFirstMatch: true
+});
 
 // Middleware
 app.use(express.json());
@@ -41,6 +47,7 @@ io.on('connection', (socket) => {
 // Rutas API
 app.get('/duel-info/:duelId', async (req, res) => {
   try {
+    const Duel = require('./models/Duel');
     const duel = await Duel.getDuelById(req.params.duelId);
     res.json(duel);
   } catch (error) {
@@ -53,6 +60,7 @@ app.get('/', async (req, res) => {
   
   if (duelId) {
     try {
+      const Duel = require('./models/Duel');
       const duel = await Duel.getDuelById(duelId);
       if (duel) {
         return res.send(generateMiniAppHTML(duel));
@@ -66,16 +74,53 @@ app.get('/', async (req, res) => {
 });
 
 // Comandos de Telegram
-bot.onText(/\/pvp(?:\s+(\d+))?/, (msg, match) => {
+bot.onText(/\/start$/, (msg) => {
+  handleStartCommand(bot, msg);
+});
+
+bot.onText(/\/pvp(?:\s+(\d+))?$/, (msg, match) => {
   handlePvpCommand(bot, msg, match);
 });
 
+bot.onText(/\/points$/, (msg) => {
+  handlePointsCommand(bot, msg);
+});
+
+bot.onText(/\/leaderboard$/, async (msg) => {
+  try {
+    const User = require('./models/User');
+    const leaderboard = await User.getLeaderboard(10);
+    
+    let message = '🏆 *Tabla de Clasificación* 🏆\n\n';
+    
+    leaderboard.forEach((user, index) => {
+      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🔸';
+      message += `${medal} ${index + 1}. ${user.firstName} - ${user.points} puntos\n`;
+    });
+    
+    bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error en /leaderboard:', error);
+    bot.sendMessage(msg.chat.id, '❌ Error al cargar la tabla de clasificación');
+  }
+});
+
+// Manejar callbacks
 bot.on('callback_query', async (callbackQuery) => {
   const data = callbackQuery.data;
   
   if (data === 'join_duel') {
     handleJoinDuel(bot, callbackQuery);
+  } else if (data === 'create_duel') {
+    bot.sendMessage(callbackQuery.message.chat.id, 
+      'Usa /pvp [cantidad] para crear un duelo. Ejemplo: /pvp 25'
+    );
   }
+});
+
+// Manejar errores
+bot.on('error', (error) => {
+  console.error('❌ Error del bot de Telegram:', error);
 });
 
 // Iniciar servidor

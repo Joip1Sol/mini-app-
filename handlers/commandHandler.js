@@ -1,6 +1,63 @@
 const User = require('../models/User');
 const Duel = require('../models/Duel');
 
+async function handleStartCommand(bot, msg) {
+  try {
+    const user = await User.findOrCreate(msg.from);
+    
+    const keyboard = {
+      inline_keyboard: [[{
+        text: '🎮 Crear Duelo (/pvp)',
+        callback_data: 'create_duel'
+      }]]
+    };
+
+    await bot.sendMessage(msg.chat.id, `
+¡Hola ${user.firstName}! 👋
+
+🎯 *CoinFlip Bot* - Sistema de duelos por puntos
+
+✨ *Comandos disponibles:*
+/pvp [cantidad] - Crear duelo con apuesta
+/points - Ver tus puntos y estadísticas
+/leaderboard - Tabla de clasificación
+
+*Tu información:*
+💰 Puntos: ${user.points}
+🏆 Victorias: ${user.duelsWon}
+💔 Derrotas: ${user.duelsLost}
+🎯 Ganancias totales: ${user.totalWinnings} puntos
+    `.trim(), {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+
+  } catch (error) {
+    console.error('Error en /start:', error);
+    bot.sendMessage(msg.chat.id, '❌ Error al cargar tu información');
+  }
+}
+
+async function handlePointsCommand(bot, msg) {
+  try {
+    const user = await User.findOrCreate(msg.from);
+    
+    await bot.sendMessage(msg.chat.id, `
+📊 *Tus Estadísticas*
+
+👤 ${user.firstName}${user.username ? ` (@${user.username})` : ''}
+💰 Puntos: ${user.points}
+🏆 Victorias: ${user.duelsWon}
+💔 Derrotas: ${user.duelsLost}
+🎯 Ganancias totales: ${user.totalWinnings} puntos
+    `.trim(), { parse_mode: 'Markdown' });
+
+  } catch (error) {
+    console.error('Error en /points:', error);
+    bot.sendMessage(msg.chat.id, '❌ Error al cargar tus estadísticas');
+  }
+}
+
 async function handlePvpCommand(bot, msg, match) {
   try {
     const user = await User.findOrCreate(msg.from);
@@ -15,7 +72,7 @@ async function handlePvpCommand(bot, msg, match) {
     const keyboard = {
       inline_keyboard: [[{
         text: '✅ Unirse al duelo',
-        callback_data: `join_duel`
+        callback_data: 'join_duel'
       }]]
     };
 
@@ -43,13 +100,14 @@ async function handlePvpCommand(bot, msg, match) {
           await Duel.expireDuel(duel._id.toString());
           await bot.editMessageText(`❌ Duelo expirado: Nadie se unió`, {
             chat_id: msg.chat.id,
-            message_id: message.message_id
+            message_id: message.message_id,
+            reply_markup: { inline_keyboard: [] } // Remover botones
           });
         }
       } catch (error) {
         console.error('Error expirando duelo:', error);
       }
-    }, 120000); // 2 minutos
+    }, 120000);
 
   } catch (error) {
     console.error('Error en /pvp:', error);
@@ -96,7 +154,16 @@ async function handleJoinDuel(bot, callbackQuery) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(activeDuel._id.toString(), user);
     
-    // Actualizar mensaje original
+    // CORREGIDO: Formato correcto del botón web_app
+    const webAppUrl = `https://mini-app-jr7n.onrender.com?duel=${activeDuel._id}`;
+    const replyMarkup = {
+      inline_keyboard: [[{
+        text: '🎮 Ver en MiniApp',
+        web_app: { url: webAppUrl }
+      }]]
+    };
+
+    // CORREGIDO: Usar first_name en lugar de firstName
     await bot.editMessageText(`
 🎮 *Duelo en Progreso* 🎮
 
@@ -106,17 +173,12 @@ async function handleJoinDuel(bot, callbackQuery) {
 
 ⏰ *La moneda girará en 15 segundos...*
 
-[Ver animación en MiniApp](https://your-render-app.onrender.com?duel=${activeDuel._id})
+[Ver animación en MiniApp](${webAppUrl})
     `.trim(), {
       chat_id: message.chat.id,
       message_id: message.message_id,
       parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [[{
-          text: '🎮 Ver en MiniApp',
-          web_app: { url: `https://your-render-app.onrender.com?duel=${activeDuel._id}` }
-        }]]
-      }
+      reply_markup: replyMarkup
     });
 
     await bot.answerCallbackQuery(callbackQuery.id, {
@@ -168,7 +230,8 @@ async function completeDuel(bot, duelId) {
     `.trim(), {
       chat_id: duel.chatId,
       message_id: duel.messageId,
-      parse_mode: 'Markdown'
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [] } // Remover botones después del duelo
     });
 
   } catch (error) {
@@ -176,4 +239,10 @@ async function completeDuel(bot, duelId) {
   }
 }
 
-module.exports = { handlePvpCommand, handleJoinDuel, completeDuel };
+module.exports = { 
+  handleStartCommand, 
+  handlePointsCommand, 
+  handlePvpCommand, 
+  handleJoinDuel, 
+  completeDuel 
+};

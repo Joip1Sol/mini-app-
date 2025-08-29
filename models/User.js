@@ -1,5 +1,4 @@
 const { getDB } = require('../config/database');
-const { ObjectId } = require('mongodb');
 
 class User {
   static async findOrCreate(telegramUser) {
@@ -11,7 +10,7 @@ class User {
     if (!user) {
       const newUser = {
         telegramId: telegramUser.id,
-        firstName: telegramUser.first_name,
+        firstName: telegramUser.first_name || 'Usuario',
         username: telegramUser.username,
         points: 100,
         duelsWon: 0,
