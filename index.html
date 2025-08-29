@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CoinFlip MiniApp</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #222222;
+            --tg-theme-button-color: #40a7e3;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f1f1f1;
+            --primary-color: #40a7e3;
+            --secondary-color: #2d89bc;
+            --border-radius: 12px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --tg-theme-bg-color: #212121;
+                --tg-theme-text-color: #ffffff;
+                --tg-theme-secondary-bg-color: #181818;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            padding: 16px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .players-container {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .player-card {
+            flex: 1;
+            background: var(--tg-theme-secondary-bg-color);
+            padding: 15px;
+            border-radius: var(--border-radius);
+            text-align: center;
+        }
+
+        .coin-section {
+            perspective: 1000px;
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 20px;
+        }
+
+        #coin {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 2s ease-out;
+        }
+
+        .coin-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            background: linear-gradient(145deg, #d4d4d4, #f4f4f4);
+            border: 3px solid #c4b16b;
+        }
+
+        .front { z-index: 2; }
+        .back { transform: rotateY(180deg); }
+
+        .result-section {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: var(--border-radius);
+        }
+
+        .history-section {
+            margin-top: 20px;
+        }
+
+        .history-item {
+            padding: 10px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            font-size: 14px;
+        }
+
+        @keyframes flip {
+            0% { transform: rotateY(0); }
+            100% { transform: rotateY(1800deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 CoinFlip Duelo</h1>
+        </div>
+
+        <div class="players-container">
+            <div class="player-card" id="playerA-card">
+                <h3>Jugador A</h3>
+                <p id="playerA-name">Cargando...</p>
+            </div>
+            <div class="player-card" id="playerB-card">
+                <h3>Jugador B</h3>
+                <p id="playerB-name">Cargando...</p>
+            </div>
+        </div>
+
+        <div class="coin-section">
+            <div id="coin">
+                <div class="coin-face front"><span id="front-text">A</span></div>
+                <div class="coin-face back"><span id="back-text">B</span></div>
+            </div>
+        </div>
+
+        <div class="result-section" id="result">
+            <p>🔄 Esperando jugadores...</p>
+        </div>
+
+        <div class="history-section">
+            <h3>📊 Historial</h3>
+            <div id="history-items"></div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
+
+        // Obtener ID del duelo desde la URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const duelId = urlParams.get('duel');
+
+        // Conectar con el backend para updates en tiempo real
+        async function loadDuelInfo() {
+            if (!duelId) return;
+
+            try {
+                const response = await fetch(`/duel-info?duelId=${duelId}`);
+                const duel = await response.json();
+
+                // Actualizar UI
+                document.getElementById('playerA-name').textContent = 
+                    duel.playerA?.firstName || 'Esperando...';
+                document.getElementById('playerB-name').textContent = 
+                    duel.playerB?.firstName || 'Esperando...';
+
+                if (duel.status === 'completed') {
+                    showResult(duel);
+                }
+            } catch (error) {
+                console.error('Error loading duel info:', error);
+            }
+        }
+
+        function showResult(duel) {
+            document.getElementById('result').innerHTML = `
+                <h3>🎉 Ganador: ${duel.winner.firstName}</h3>
+                <p>💰 Premio: ${duel.betAmount * 2} puntos</p>
+                <p>🎯 Resultado: ${duel.winner === duel.playerA ? '🟡 Cara' : '⚫ Cruz'}</p>
+            `;
+
+            // Animar moneda
+            document.getElementById('coin').style.animation = 'flip 2s ease-out forwards';
+        }
+
+        // Cargar información inicial
+        loadDuelInfo();
+        
+        // Polling para updates
+        setInterval(loadDuelInfo, 3000);
+    </script>
+</body>
+</html>
