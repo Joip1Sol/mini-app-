@@ -2,7 +2,7 @@ const { getDB } = require('../config/database');
 const { ObjectId } = require('mongodb');
 
 class Duel {
-  static async create(playerA, betAmount) {
+  static async create(playerA, betAmount, chatId, messageId) {
     const db = getDB();
     const duels = db.collection('duels');
     
@@ -13,9 +13,13 @@ class Duel {
       status: 'waiting',
       winner: null,
       loser: null,
+      chatId,
+      messageId,
       createdAt: new Date(),
       updatedAt: new Date(),
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000) // 15 minutos para expirar
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      countdownStart: null,
+      countdownEnd: null
     };
     
     const result = await duels.insertOne(newDuel);
@@ -37,12 +41,17 @@ class Duel {
     const db = getDB();
     const duels = db.collection('duels');
     
+    const countdownStart = new Date();
+    const countdownEnd = new Date(countdownStart.getTime() + 15000);
+    
     await duels.updateOne(
       { _id: new ObjectId(duelId) },
       { 
         $set: { 
           playerB,
-          status: 'in-progress',
+          status: 'countdown',
+          countdownStart,
+          countdownEnd,
           updatedAt: new Date()
         } 
       }
@@ -85,14 +94,22 @@ class Duel {
     );
   }
 
-  static async getActiveDuels() {
+  static async getDuelById(duelId) {
+    const db = getDB();
+    const duels = db.collection('duels');
+    return await duels.findOne({ _id: new ObjectId(duelId) });
+  }
+
+  static async updateDuel(duelId, updateData) {
     const db = getDB();
     const duels = db.collection('duels');
     
-    return await duels.find({ 
-      status: 'waiting',
-      expiresAt: { $gt: new Date() }
-    }).toArray();
+    await duels.updateOne(
+      { _id: new ObjectId(duelId) },
+      { $set: { ...updateData, updatedAt: new Date() } }
+    );
+    
+    return await duels.findOne({ _id: new ObjectId(duelId) });
   }
 }
 
