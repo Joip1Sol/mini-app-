@@ -283,6 +283,24 @@
             color: var(--primary-color);
         }
 
+        .telegram-link {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: var(--primary-color);
+            border-radius: var(--border-radius);
+        }
+
+        .telegram-link a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
         @keyframes flip {
             0% { transform: rotateY(0deg); }
             100% { transform: rotateY(1800deg); }
@@ -389,6 +407,12 @@
             </div>
         </div>
 
+        <div class="telegram-link">
+            <a href="https://t.me/IMPRENTA_ROBOT/CoinFlip" target="_blank">
+                📱 Ver este duelo en Telegram
+            </a>
+        </div>
+
         <div class="history-section">
             <div class="history-title">📊 Últimos Resultados</div>
             <div id="history-items">
@@ -408,7 +432,8 @@
             betAmount: 10,
             status: 'waiting', // waiting, countdown, in-progress, completed
             winner: null,
-            countdown: 10
+            countdown: 10,
+            history: []
         };
 
         // Inicializar la aplicación
@@ -433,6 +458,35 @@
             } else {
                 updateUI();
             }
+
+            // Simular actualizaciones en tiempo real
+            setInterval(() => {
+                checkForUpdates();
+            }, 3000);
+        }
+
+        // Verificar actualizaciones (simulación)
+        function checkForUpdates() {
+            // En una aplicación real, aquí te conectarías a WebSockets o harías polling al servidor
+            if (gameState.status === 'completed') {
+                // Después de 5 segundos de completado, reiniciar para nuevo duelo
+                setTimeout(() => {
+                    resetForNewDuel();
+                }, 5000);
+            }
+        }
+
+        // Reiniciar para un nuevo duelo
+        function resetForNewDuel() {
+            if (gameState.status === 'completed') {
+                gameState.playerA = null;
+                gameState.playerB = null;
+                gameState.status = 'waiting';
+                gameState.winner = null;
+                gameState.countdown = 10;
+                
+                updateUI();
+            }
         }
 
         // Unirse a un duelo desde un enlace
@@ -453,7 +507,10 @@
 
         // Crear un nuevo duelo
         function createDuel() {
-            if (gameState.status !== 'waiting') return;
+            if (gameState.status !== 'waiting') {
+                alert('Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.');
+                return;
+            }
             
             gameState.playerA = gameState.currentUser;
             gameState.status = 'waiting';
@@ -550,16 +607,22 @@
         function determineWinner() {
             const isPlayerAWinner = Math.random() > 0.5;
             gameState.winner = isPlayerAWinner ? gameState.playerA : gameState.playerB;
+            const loser = isPlayerAWinner ? gameState.playerB : gameState.playerA;
             gameState.status = 'completed';
             
             // Añadir al historial
-            addToHistory(gameState.winner, isPlayerAWinner ? 'Cara' : 'Cruz');
+            addToHistory(gameState.winner, loser, isPlayerAWinner ? 'Cara' : 'Cruz');
             
             updateUI();
+            
+            // Después de 5 segundos, reiniciar para nuevo duelo
+            setTimeout(() => {
+                resetForNewDuel();
+            }, 5000);
         }
 
         // Añadir partida al historial
-        function addToHistory(winner, result) {
+        function addToHistory(winner, loser, result) {
             const historyItems = document.getElementById('history-items');
             const now = new Date();
             const timeString = now.toLocaleTimeString();
@@ -567,7 +630,7 @@
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             historyItem.innerHTML = `
-                <span>${winner.firstName} ganó</span>
+                <span>${winner.firstName} vs ${loser.firstName}</span>
                 <span>${timeString} (${result})</span>
             `;
             
@@ -578,6 +641,14 @@
             }
             
             historyItems.prepend(historyItem);
+            
+            // Guardar en el historial del estado
+            gameState.history.unshift({
+                winner: winner.firstName,
+                loser: loser.firstName,
+                result: result,
+                time: timeString
+            });
         }
 
         // Actualizar la interfaz de usuario
@@ -599,19 +670,32 @@
             if (gameState.status === 'waiting') {
                 joinBtn.disabled = !gameState.playerA;
                 createBtn.disabled = !!gameState.playerA;
+                joinBtn.classList.remove('hidden');
+                createBtn.classList.remove('hidden');
             } else {
                 joinBtn.disabled = true;
                 createBtn.disabled = true;
+                joinBtn.classList.add('hidden');
+                createBtn.classList.add('hidden');
             }
             
             // Mostrar resultado si el duelo está completado
             const resultSection = document.getElementById('result-section');
             if (gameState.status === 'completed' && gameState.winner) {
                 resultSection.classList.remove('hidden');
-                document.getElementById('winner-text').textContent = `🎉 ¡${gameState.winner.firstName} gana!`;
+                
+                const loser = gameState.winner === gameState.playerA ? gameState.playerB : gameState.playerA;
+                const winnerName = gameState.winner.firstName || 'Ganador';
+                const loserName = loser.firstName || 'Perdedor';
+                const winnerUsername = gameState.winner.username ? ` (@${gameState.winner.username})` : '';
+                const loserUsername = loser.username ? ` (@${loser.username})` : '';
+                
+                document.getElementById('winner-text').textContent = `🎉 ¡${winnerName} gana!`;
                 document.getElementById('result-details').innerHTML = `
-                    <div>💰 Premio: ${gameState.betAmount * 2} puntos</div>
-                    <div>🎯 Resultado: ${gameState.winner === gameState.playerA ? 'Cara' : 'Cruz'}</div>
+                    <div>👑 <strong>Ganador:</strong> ${winnerName}${winnerUsername}</div>
+                    <div>💔 <strong>Perdedor:</strong> ${loserName}${loserUsername}</div>
+                    <div>💰 <strong>Premio:</strong> ${gameState.betAmount * 2} puntos</div>
+                    <div>🎯 <strong>Resultado:</strong> ${gameState.winner === gameState.playerA ? '🟡 Cara' : '⚫ Cruz'}</div>
                 `;
                 
                 // Marcar jugador ganador
@@ -619,6 +703,10 @@
                     .classList.add('winner');
             } else {
                 resultSection.classList.add('hidden');
+                
+                // Quitar marca de ganador
+                document.getElementById('player-a').classList.remove('winner');
+                document.getElementById('player-b').classList.remove('winner');
             }
             
             // Reiniciar moneda si no está en progreso
