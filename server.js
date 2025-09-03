@@ -6,7 +6,9 @@ const {
   handleStartCommand, 
   handlePointsCommand, 
   handlePvpCommand, 
-  handleJoinDuel 
+  handleJoinDuel,
+  handleDeepLinkJoin,
+  completeDuel
 } = require('./handlers/commandHandler');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -28,6 +30,10 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
   onlyFirstMatch: true
 });
 
+// Variables globales para el duelo activo
+let activeDuel = null;
+let duelTimeout = null;
+
 // Middleware
 app.use(express.json());
 app.use(express.static('.'));
@@ -45,84 +51,105 @@ connectDB().then(() => {
   console.log('✅ Base de datos conectada');
 });
 
+// Función para actualizar todos los clientes
+function broadcastDuelUpdate(duel) {
+  activeDuel = duel;
+  io.emit('duel-update', duel);
+}
+
 // WebSocket para actualizaciones en tiempo real
 io.on('connection', (socket) => {
   console.log('🔗 Cliente conectado a WebSocket');
   
-  socket.on('join-duel', (duelId) => {
-    socket.join(duelId);
-    console.log(`👥 Cliente unido a la sala del duelo: ${duelId}`);
-  });
-  
-  socket.on('get-duel-info', async (duelId) => {
-    try {
-      const Duel = require('./models/Duel');
-      const duel = await Duel.getDuelById(duelId);
-      socket.emit('duel-update', duel);
-    } catch (error) {
-      console.error('Error enviando info del duelo:', error);
-    }
-  });
+  // Enviar el duelo activo inmediatamente al conectar
+  if (activeDuel) {
+    socket.emit('duel-update', activeDuel);
+  }
   
   socket.on('disconnect', () => {
     console.log('❌ Cliente desconectado');
   });
 });
 
-// Servir Socket.io client
-app.get('/socket.io/socket.io.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist', 'socket.io.js'));
+// API para obtener el duelo activo
+app.get('/api/active-duel', async (req, res) => {
+  try {
+    if (activeDuel) {
+      const Duel = require('./models/Duel');
+      const updatedDuel = await Duel.getDuelById(activeDuel._id);
+      res.json(updatedDuel);
+    } else {
+      res.json(null);
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Error obteniendo duelo activo' });
+  }
 });
 
-// Rutas API
-app.get('/duel-info/:duelId', async (req, res) => {
+// API para unirse al duelo activo
+app.post('/api/join-duel', async (req, res) => {
   try {
-    const Duel = require('./models/Duel');
-    const duel = await Duel.getDuelById(req.params.duelId);
+    if (!activeDuel) {
+      return res.status(400).json({ error: 'No hay duelos activos' });
+    }
+
+    const { userId, userName } = req.body;
     
-    // Configurar CORS para esta respuesta
-    res.header('Access-Control-Allow-Origin', '*');
-    res.json(duel);
+    // Simular la unión al duelo (en producción esto vendría de Telegram)
+    const user = { telegramId: userId, first_name: userName };
+    
+    // Usar handleJoinDuel para procesar la unión
+    const Duel = require('./models/Duel');
+    const updatedDuel = await Duel.joinDuel(activeDuel._id, user);
+    broadcastDuelUpdate(updatedDuel);
+    
+    res.json({ success: true, duel: updatedDuel });
   } catch (error) {
-    console.error('Error obteniendo información del duelo:', error);
-    res.status(500).json({ error: 'Error obteniendo información del duelo' });
+    res.status(500).json({ error: error.message });
   }
 });
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Server funcionando', timestamp: new Date() });
+  res.json({ 
+    status: 'OK', 
+    message: 'Server funcionando', 
+    activeDuel: !!activeDuel,
+    timestamp: new Date() 
+  });
 });
 
-app.get('/', async (req, res) => {
-  const duelId = req.query.duel;
-  
-  // Configurar headers CORS
-  res.header('Access-Control-Allow-Origin', '*');
+// Ruta principal - SINGLE PAGE APPLICATION
+app.get('/', (req, res) => {
   res.header('Content-Type', 'text/html; charset=utf-8');
-  
-  if (duelId) {
-    try {
-      const Duel = require('./models/Duel');
-      const duel = await Duel.getDuelById(duelId);
-      if (duel) {
-        return res.send(generateMiniAppHTML(duel));
-      }
-    } catch (error) {
-      console.error('Error loading duel:', error);
-    }
-  }
-  
-  res.send(generateMiniAppHTML());
+  res.send(generateSPAHTML());
 });
 
 // Comandos de Telegram
-bot.onText(/\/start$/, (msg) => {
-  handleStartCommand(bot, msg);
+bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
+  const deepLinkParam = match && match[1];
+  if (deepLinkParam && deepLinkParam.startsWith('join_')) {
+    const duelId = deepLinkParam.replace('join_', '');
+    handleDeepLinkJoin(bot, msg, duelId);
+  } else {
+    handleStartCommand(bot, msg);
+  }
 });
 
-bot.onText(/\/pvp(?:\s+(\d+))?$/, (msg, match) => {
-  handlePvpCommand(bot, msg, match);
+bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
+  try {
+    // Si ya hay un duelo activo, no permitir crear otro
+    if (activeDuel) {
+      return bot.sendMessage(msg.chat.id, 
+        '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.'
+      );
+    }
+    
+    await handlePvpCommand(bot, msg, match, broadcastDuelUpdate);
+  } catch (error) {
+    console.error('Error en /pvp:', error);
+    bot.sendMessage(msg.chat.id, '❌ Error al crear el duelo');
+  }
 });
 
 bot.onText(/\/points$/, (msg) => {
@@ -148,16 +175,41 @@ bot.onText(/\/leaderboard$/, async (msg) => {
   }
 });
 
-// Manejar callbacks
+// Manejar callbacks de botones
 bot.on('callback_query', async (callbackQuery) => {
   const data = callbackQuery.data;
   
   if (data === 'join_duel') {
-    handleJoinDuel(bot, callbackQuery);
-  } else if (data === 'create_duel') {
-    bot.sendMessage(callbackQuery.message.chat.id, 
-      'Usa /pvp [cantidad] para crear un duelo. Ejemplo: /pvp 25'
-    );
+    try {
+      // Obtener el duelo activo
+      const Duel = require('./models/Duel');
+      if (!activeDuel) {
+        return bot.answerCallbackQuery(callbackQuery.id, {
+          text: '❌ No hay duelos activos',
+          show_alert: true
+        });
+      }
+      
+      // Unirse al duelo
+      const user = {
+        telegramId: callbackQuery.from.id,
+        first_name: callbackQuery.from.first_name
+      };
+      
+      const updatedDuel = await Duel.joinDuel(activeDuel._id, user);
+      broadcastDuelUpdate(updatedDuel);
+      
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: '✅ Te has unido al duelo',
+        show_alert: false
+      });
+    } catch (error) {
+      console.error('Error en callback join_duel:', error);
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: '❌ Error al unirse al duelo',
+        show_alert: true
+      });
+    }
   }
 });
 
@@ -170,24 +222,17 @@ bot.on('error', (error) => {
 server.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log(`🤖 Bot de Telegram iniciado`);
-  console.log(`🌐 MiniApp disponible en: https://mini-app-jr7n.onrender.com`);
+  console.log(`🌐 SPA disponible en: http://localhost:${PORT}`);
 });
 
-// Función para generar HTML de la MiniApp (CORREGIDA)
-function generateMiniAppHTML(duel = null) {
-  const playerAName = duel?.playerA?.first_name || 'Cargando...';
-  const playerBName = duel?.playerB?.first_name || 'Esperando...';
-  const duelStatus = duel?.status || 'waiting';
-  const betAmount = duel?.betAmount || 0;
-
-  return `
-<!DOCTYPE html>
+// Función para generar la Single Page Application
+function generateSPAHTML() {
+  return `<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CoinFlip MiniApp</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>CoinFlip Duelo en Vivo</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         :root {
@@ -198,6 +243,9 @@ function generateMiniAppHTML(duel = null) {
             --tg-theme-secondary-bg-color: #f1f1f1;
             --primary-color: #40a7e3;
             --secondary-color: #2d89bc;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --error-color: #f44336;
             --border-radius: 12px;
         }
 
@@ -220,64 +268,116 @@ function generateMiniAppHTML(duel = null) {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--tg-theme-bg-color);
             color: var(--tg-theme-text-color);
-            padding: 16px;
+            padding: 20px;
             min-height: 100vh;
-            max-width: 100%;
-            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .container {
-            max-width: 100%;
+            width: 100%;
+            max-width: 500px;
             margin: 0 auto;
         }
 
         .header {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--tg-theme-secondary-bg-color);
         }
 
         .header h1 {
-            font-size: 1.5rem;
+            font-size: 2rem;
             margin: 0;
+            color: var(--primary-color);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
         }
 
-        .players-container {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .player-card {
-            flex: 1;
-            min-width: 120px;
-            background: var(--tg-theme-secondary-bg-color);
-            padding: 12px;
+        .status-banner {
+            padding: 15px;
             border-radius: var(--border-radius);
+            margin-bottom: 20px;
             text-align: center;
-        }
-
-        .player-card.active {
-            background: var(--tg-theme-button-color);
-            color: var(--tg-theme-button-text-color);
-        }
-
-        .player-card h3 {
-            margin: 0 0 8px 0;
-            font-size: 0.9rem;
-        }
-
-        .player-card p {
-            margin: 0;
-            font-size: 0.8rem;
             font-weight: bold;
         }
 
+        .status-waiting {
+            background-color: var(--warning-color);
+            color: white;
+        }
+
+        .status-countdown {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .status-completed {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .duel-container {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .players-section {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 25px;
+        }
+
+        .player-card {
+            text-align: center;
+            padding: 15px;
+            border-radius: var(--border-radius);
+            background: var(--tg-theme-bg-color);
+            min-width: 120px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .player-card.active {
+            border: 2px solid var(--primary-color);
+            transform: scale(1.05);
+        }
+
+        .player-card.winner {
+            border: 2px solid var(--success-color);
+            background: linear-gradient(135deg, var(--success-color) 0%, #a5d6a7 100%);
+            color: white;
+        }
+
+        .player-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+
+        .player-status {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .vs-separator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
         .coin-section {
-            perspective: 600px;
-            width: 100px;
-            height: 100px;
-            margin: 0 auto 20px;
+            perspective: 1000px;
+            width: 150px;
+            height: 150px;
+            margin: 0 auto 25px;
+            position: relative;
         }
 
         #coin {
@@ -285,6 +385,7 @@ function generateMiniAppHTML(duel = null) {
             height: 100%;
             position: relative;
             transform-style: preserve-3d;
+            transition: transform 0.5s ease-out;
         }
 
         .coin-face {
@@ -297,68 +398,139 @@ function generateMiniAppHTML(duel = null) {
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            font-size: 0.8rem;
-            background: linear-gradient(145deg, #d4d4d4, #f4f4f4);
-            border: 2px solid #c4b16b;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
-        .front { 
-            z-index: 2; 
+        .front {
             background: linear-gradient(145deg, #ffd700, #ffed4e);
+            border: 4px solid #c4b16b;
+            color: #333;
+            z-index: 2;
         }
-        
-        .back { 
-            transform: rotateY(180deg);
+
+        .back {
             background: linear-gradient(145deg, #c0c0c0, #e8e8e8);
+            border: 4px solid #a8a8a8;
+            color: #333;
+            transform: rotateY(180deg);
+        }
+
+        .bet-amount {
+            text-align: center;
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin: 15px 0;
+            color: var(--primary-color);
+        }
+
+        .action-section {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .btn {
+            padding: 15px 25px;
+            border: none;
+            border-radius: var(--border-radius);
+            background: var(--primary-color);
+            color: white;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn.join {
+            background: var(--success-color);
+        }
+
+        .btn.create {
+            background: var(--primary-color);
         }
 
         .countdown {
             text-align: center;
-            font-size: 1.2rem;
+            font-size: 2rem;
             font-weight: bold;
-            margin: 15px 0;
-            color: var(--tg-theme-button-color);
-            display: none;
+            margin: 20px 0;
+            color: var(--primary-color);
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
         }
 
         .result-section {
             text-align: center;
-            margin: 15px 0;
-            padding: 12px;
+            margin: 25px 0;
+            padding: 20px;
             background: var(--tg-theme-secondary-bg-color);
             border-radius: var(--border-radius);
+            animation: fadeIn 0.5s ease-in;
         }
 
-        .result-section h3 {
-            margin: 0 0 8px 0;
+        .winner-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--success-color);
+            margin-bottom: 10px;
+        }
+
+        .result-details {
             font-size: 1.1rem;
-        }
-
-        .result-section p {
-            margin: 4px 0;
-            font-size: 0.9rem;
+            margin: 5px 0;
         }
 
         .history-section {
-            margin-top: 15px;
-            padding: 12px;
+            margin-top: 25px;
+            padding: 20px;
             background: var(--tg-theme-secondary-bg-color);
             border-radius: var(--border-radius);
         }
 
-        .history-section h3 {
-            margin: 0 0 10px 0;
-            font-size: 1rem;
+        .history-title {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            color: var(--primary-color);
         }
 
         .history-item {
-            padding: 6px 0;
+            padding: 10px;
             border-bottom: 1px solid rgba(0,0,0,0.1);
-            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
         }
 
         .history-item:last-child {
             border-bottom: none;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--tg-theme-text-color);
+            opacity: 0.7;
+        }
+
+        .empty-state h2 {
+            margin-bottom: 10px;
+            color: var(--primary-color);
         }
 
         @keyframes flip {
@@ -372,27 +544,45 @@ function generateMiniAppHTML(duel = null) {
             100% { transform: scale(1); opacity: 1; }
         }
 
-        .winner {
-            animation: pulse 2s infinite;
-            color: #ff9900;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .flipping {
             animation: flip 2s ease-out forwards;
         }
 
-        @media (max-width: 340px) {
-            .players-container {
-                flex-direction: column;
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 10px;
             }
             
-            .player-card {
-                min-width: 100%;
+            .players-section {
+                flex-direction: column;
+                gap: 15px;
             }
             
             .coin-section {
-                width: 80px;
-                height: 80px;
+                width: 120px;
+                height: 120px;
+            }
+            
+            .btn {
+                padding: 12px 20px;
+                font-size: 1rem;
             }
         }
     </style>
@@ -400,135 +590,155 @@ function generateMiniAppHTML(duel = null) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎯 CoinFlip Duelo</h1>
+            <h1>🎯 CoinFlip Duelo en Vivo</h1>
+            <p>Solo un duelo a la vez - ¡Únete y gana puntos!</p>
         </div>
 
-        <div class="players-container">
-            <div class="player-card" id="playerA-card">
-                <h3>Jugador A</h3>
-                <p id="playerA-name">${playerAName}</p>
+        <div id="status-banner" class="status-banner hidden">
+            <span id="status-text"></span>
+        </div>
+
+        <div id="duel-container" class="duel-container hidden">
+            <div class="players-section">
+                <div class="player-card" id="player-a-card">
+                    <div class="player-name" id="player-a-name">Jugador A</div>
+                    <div class="player-status" id="player-a-status">Esperando...</div>
+                </div>
+                
+                <div class="vs-separator">VS</div>
+                
+                <div class="player-card" id="player-b-card">
+                    <div class="player-name" id="player-b-name">Jugador B</div>
+                    <div class="player-status" id="player-b-status">Disponible</div>
+                </div>
             </div>
-            <div class="player-card" id="playerB-card">
-                <h3>Jugador B</h3>
-                <p id="playerB-name">${playerBName}</p>
+
+            <div class="bet-amount">
+                💰 <span id="bet-amount">0</span> puntos en juego
+            </div>
+
+            <div class="coin-section">
+                <div id="coin">
+                    <div class="coin-face front"><span id="front-text">A</span></div>
+                    <div class="coin-face back"><span id="back-text">B</span></div>
+                </div>
+            </div>
+
+            <div id="countdown" class="countdown hidden">
+                ⏰ <span id="countdown-value">15</span>s
+            </div>
+
+            <div class="action-section">
+                <button id="join-btn" class="btn join" onclick="joinDuel()">✅ Unirse al Duelo</button>
+                <button id="create-btn" class="btn create hidden" onclick="createDuel()">⚔️ Crear Nuevo Duelo</button>
+            </div>
+
+            <div id="result-section" class="result-section hidden">
+                <div class="winner-text" id="winner-text">🎉 ¡Ganador!</div>
+                <div class="result-details" id="result-details"></div>
             </div>
         </div>
 
-        <div class="coin-section">
-            <div id="coin">
-                <div class="coin-face front"><span id="front-text">A</span></div>
-                <div class="coin-face back"><span id="back-text">B</span></div>
-            </div>
-        </div>
-
-        <div class="countdown" id="countdown">
-            ⏰ <span id="countdown-value">15</span>s
-        </div>
-
-        <div class="result-section" id="result">
-            <p id="status-message">${duelStatus === 'waiting' ? '🔄 Esperando que alguien se una al duelo...' : '⏰ Preparándose...'}</p>
+        <div id="empty-state" class="empty-state">
+            <h2>🎯 No hay duelos activos</h2>
+            <p>¡Sé el primero en crear un duelo!</p>
+            <button class="btn create" onclick="createDuel()">⚔️ Crear Mi Duelo</button>
         </div>
 
         <div class="history-section">
-            <h3>📊 Información del Duelo</h3>
-            <div class="history-item">💰 Apuesta: ${betAmount} puntos</div>
-            <div class="history-item">🔄 Estado: ${getStatusText(duelStatus)}</div>
-            <div class="history-item">🆔 ID: ${duel?._id || 'N/A'}</div>
+            <div class="history-title">📊 Últimos Resultados</div>
+            <div id="history-items">
+                <div class="history-item">
+                    <span>Esperando resultados...</span>
+                    <span>--</span>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
         const socket = io();
-        
-        // Inicializar Telegram Web App
-        tg.expand();
-        tg.enableClosingConfirmation();
-        tg.BackButton.show();
-        tg.BackButton.onClick(() => {
-            tg.close();
+        let currentDuel = null;
+        let countdownInterval = null;
+
+        // Conectar WebSocket y escuchar actualizaciones
+        socket.on('connect', () => {
+            console.log('🔗 Conectado al servidor');
+            loadActiveDuel();
         });
 
-        // Obtener ID del duelo desde la URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const duelId = urlParams.get('duel');
+        socket.on('duel-update', (duel) => {
+            console.log('🔄 Actualización de duelo recibida:', duel);
+            currentDuel = duel;
+            updateUI(duel);
+        });
 
-        let countdownInterval;
-        let currentDuel = null;
+        socket.on('disconnect', () => {
+            console.log('❌ Desconectado del servidor');
+        });
 
-        // Función para obtener texto del estado
-        function getStatusText(status) {
-            const statusMap = {
-                'waiting': '⏳ Esperando jugador',
-                'countdown': '⏰ Countdown activo',
-                'completed': '✅ Completado',
-                'expired': '❌ Expirado'
-            };
-            return statusMap[status] || status;
+        // Cargar duelo activo al iniciar
+        async function loadActiveDuel() {
+            try {
+                const response = await fetch('/api/active-duel');
+                currentDuel = await response.json();
+                updateUI(currentDuel);
+            } catch (error) {
+                console.error('Error loading active duel:', error);
+            }
         }
 
-        // Conectar con el backend para updates en tiempo real
-        async function loadDuelInfo() {
-            if (!duelId) {
-                document.getElementById('status-message').textContent = '❌ No se especificó ID de duelo';
+        // Actualizar la interfaz según el estado del duelo
+        function updateUI(duel) {
+            const duelContainer = document.getElementById('duel-container');
+            const emptyState = document.getElementById('empty-state');
+            const statusBanner = document.getElementById('status-banner');
+            const statusText = document.getElementById('status-text');
+
+            if (!duel) {
+                duelContainer.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                statusBanner.classList.add('hidden');
                 return;
             }
 
-            try {
-                const response = await fetch(\`https://${window.location.host}/duel-info/\${duelId}\`, {
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(\`Error HTTP: \${response.status}\`);
-                }
-                
-                currentDuel = await response.json();
-                updateUI(currentDuel);
-                
-                // Unirse a la sala WebSocket
-                socket.emit('join-duel', duelId);
-                
-            } catch (error) {
-                console.error('Error loading duel info:', error);
-                document.getElementById('status-message').textContent = '❌ Error cargando información del duelo';
-            }
-        }
+            emptyState.classList.add('hidden');
+            duelContainer.classList.remove('hidden');
+            statusBanner.classList.remove('hidden');
 
-        function updateUI(duel) {
-            if (!duel) return;
+            // Actualizar información de jugadores
+            document.getElementById('player-a-name').textContent = duel.playerA?.first_name || 'Jugador A';
+            document.getElementById('player-b-name').textContent = duel.playerB?.first_name || 'Jugador B';
+            document.getElementById('bet-amount').textContent = duel.betAmount || 0;
 
-            // Actualizar jugadores
-            document.getElementById('playerA-name').textContent = duel.playerA?.first_name || 'Desconocido';
-            document.getElementById('playerB-name').textContent = duel.playerB?.first_name || 'Esperando...';
-            
-            // Actualizar estado de los jugadores
-            if (duel.playerB) {
-                document.getElementById('playerB-card').classList.add('active');
-            }
+            // Actualizar estado
+            const statusMap = {
+                'waiting': ['⏳ Esperando jugador B', 'status-waiting'],
+                'countdown': ['⏰ Duelo en progreso', 'status-countdown'],
+                'completed': ['✅ Duelo completado', 'status-completed']
+            };
 
-            // Actualizar información del duelo
-            document.querySelector('.history-item:nth-child(1)').textContent = \`💰 Apuesta: \${duel.betAmount} puntos\`;
-            document.querySelector('.history-item:nth-child(2)').textContent = \`🔄 Estado: \${getStatusText(duel.status)}\`;
+            const [text, style] = statusMap[duel.status] || ['❓ Estado desconocido', ''];
+            statusText.textContent = text;
+            statusBanner.className = 'status-banner ' + style;
 
             // Manejar diferentes estados
-            if (duel.status === 'countdown' && duel.countdownEnd) {
+            if (duel.status === 'countdown') {
                 startCountdown(duel.countdownEnd);
             } else if (duel.status === 'completed') {
                 showResult(duel);
             }
+
+            // Actualizar botones
+            updateButtons(duel);
         }
 
         function startCountdown(countdownEnd) {
             const countdownElement = document.getElementById('countdown');
             const countdownValue = document.getElementById('countdown-value');
-            countdownElement.style.display = 'block';
-            
-            document.getElementById('status-message').textContent = '⏰ La moneda girará en...';
+            countdownElement.classList.remove('hidden');
 
-            function updateCountdown() {
+            function update() {
                 const now = new Date();
                 const timeLeft = Math.max(0, new Date(countdownEnd) - now);
                 const seconds = Math.ceil(timeLeft / 1000);
@@ -538,64 +748,91 @@ function generateMiniAppHTML(duel = null) {
                 if (seconds === 0) {
                     clearInterval(countdownInterval);
                     document.getElementById('coin').classList.add('flipping');
-                    document.getElementById('status-message').textContent = '🎰 Girando moneda...';
-                    
-                    // Esperar a que termine la animación
-                    setTimeout(() => {
-                        loadDuelInfo(); // Recargar para ver el resultado
-                    }, 2000);
+                    setTimeout(() => loadActiveDuel(), 2000);
                 }
             }
 
-            updateCountdown();
-            countdownInterval = setInterval(updateCountdown, 1000);
+            update();
+            countdownInterval = setInterval(update, 1000);
         }
 
         function showResult(duel) {
             clearInterval(countdownInterval);
-            document.getElementById('countdown').style.display = 'none';
-            document.getElementById('coin').classList.add('flipping');
+            document.getElementById('countdown').classList.add('hidden');
             
-            const resultElement = document.getElementById('result');
-            resultElement.innerHTML = \`
-                <h3 class="winner">🎉 Ganador: \${duel.winner?.first_name || 'Desconocido'}</h3>
-                <p>💰 Premio: \${duel.betAmount * 2} puntos</p>
-                <p>🎯 Resultado: \${duel.winner === duel.playerA ? '🟡 Cara' : '⚫ Cruz'}</p>
-            \`;
+            const resultSection = document.getElementById('result-section');
+            const winnerText = document.getElementById('winner-text');
+            const resultDetails = document.getElementById('result-details');
+
+            if (duel.winner) {
+                winnerText.textContent = '🎉 ¡' + duel.winner.first_name + ' gana!';
+                resultDetails.innerHTML = '<div>💰 Premio: ' + (duel.betAmount * 2) + ' puntos</div><div>🎯 Resultado: ' + (duel.winner === duel.playerA ? '🟡 Cara' : '⚫ Cruz') + '</div>';
+                resultSection.classList.remove('hidden');
+            }
         }
 
-        // Escuchar actualizaciones en tiempo real via WebSocket
-        socket.on('duel-update', (duel) => {
-            console.log('🔄 Actualización recibida via WebSocket');
-            currentDuel = duel;
-            updateUI(duel);
-        });
+        function updateButtons(duel) {
+            const joinBtn = document.getElementById('join-btn');
+            const createBtn = document.getElementById('create-btn');
 
-        // Manejar errores de WebSocket
-        socket.on('connect_error', (error) => {
-            console.error('❌ Error de conexión WebSocket:', error);
-            document.getElementById('status-message').textContent = '🔌 Reconectando...';
-        });
+            if (duel.status === 'waiting' && !duel.playerB) {
+                joinBtn.classList.remove('hidden');
+                joinBtn.disabled = false;
+                createBtn.classList.add('hidden');
+            } else {
+                joinBtn.classList.add('hidden');
+                if (duel.status === 'completed') {
+                    createBtn.classList.remove('hidden');
+                } else {
+                    createBtn.classList.add('hidden');
+                }
+            }
+        }
 
-        // Cargar información inicial
-        document.addEventListener('DOMContentLoaded', () => {
-            loadDuelInfo();
-            
-            // Polling para updates (fallback)
-            setInterval(loadDuelInfo, 5000);
-        });
+        // Funciones de acción
+        async function joinDuel() {
+            if (!currentDuel) return;
+
+            try {
+                const joinBtn = document.getElementById('join-btn');
+                joinBtn.disabled = true;
+                joinBtn.textContent = '🔄 Uniéndose...';
+
+                // Simular usuario (en producción esto vendría de Telegram)
+                const user = {
+                    userId: 'user_' + Date.now(),
+                    userName: 'Jugador_' + Math.floor(Math.random() * 1000)
+                };
+
+                const response = await fetch('/api/join-duel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(user)
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    joinBtn.textContent = '✅ Unido';
+                } else {
+                    joinBtn.disabled = false;
+                    joinBtn.textContent = '✅ Unirse al Duelo';
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Error joining duel:', error);
+                const joinBtn = document.getElementById('join-btn');
+                joinBtn.disabled = false;
+                joinBtn.textContent = '✅ Unirse al Duelo';
+            }
+        }
+
+        function createDuel() {
+            alert('Para crear un duelo, usa el comando /pvp en Telegram');
+        }
+
+        // Cargar inicialmente
+        document.addEventListener('DOMContentLoaded', loadActiveDuel);
     </script>
 </body>
 </html>`;
-
-// Función auxiliar para obtener texto del estado
-function getStatusText(status) {
-    const statusMap = {
-        'waiting': '⏳ Esperando jugador',
-        'countdown': '⏰ Countdown activo',
-        'completed': '✅ Completado',
-        'expired': '❌ Expirado'
-    };
-    return statusMap[status] || status;
-}
 }
