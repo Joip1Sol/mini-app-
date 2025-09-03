@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es"> 
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CoinFlip Duelo - Grupo</title>
+    <title>CoinFlip Duelo - Telegram</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -129,6 +129,12 @@
         .player p {
             font-size: 1.1rem;
             font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .player .username {
+            font-size: 0.9rem;
+            opacity: 0.8;
         }
 
         .vs {
@@ -197,48 +203,6 @@
             transform: rotateY(180deg);
         }
 
-        .action-section {
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        .btn {
-            padding: 15px 25px;
-            border: none;
-            border-radius: var(--border-radius);
-            background: var(--primary-color);
-            color: white;
-            font-size: 1.1rem;
-            font-weight: bold;
-            cursor: pointer;
-            margin: 5px;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn.join {
-            background: var(--success-color);
-        }
-
-        .btn.create {
-            background: var(--primary-color);
-        }
-
         .countdown {
             text-align: center;
             font-size: 2.5rem;
@@ -294,18 +258,6 @@
             border-bottom: none;
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: var(--text-color);
-            opacity: 0.7;
-        }
-
-        .empty-state h2 {
-            margin-bottom: 10px;
-            color: var(--primary-color);
-        }
-
         .telegram-link {
             text-align: center;
             margin-top: 20px;
@@ -324,23 +276,32 @@
             gap: 10px;
         }
 
-        .group-info {
+        .instructions {
             text-align: center;
             margin: 15px 0;
-            padding: 10px;
-            background-color: rgba(64, 167, 227, 0.1);
+            padding: 15px;
+            background-color: var(--card-bg);
             border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .instructions h3 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .instructions ol {
+            text-align: left;
+            padding-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
         }
 
         @keyframes flip {
             0% { transform: rotateY(0deg); }
             100% { transform: rotateY(1800deg); }
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.05); opacity: 0.8; }
-            100% { transform: scale(1); opacity: 1; }
         }
 
         @keyframes fadeIn {
@@ -350,10 +311,6 @@
 
         .flipping {
             animation: flip 2s ease-out forwards;
-        }
-
-        .pulse {
-            animation: pulse 2s infinite;
         }
 
         .fade-in {
@@ -382,28 +339,28 @@
                 width: 120px;
                 height: 120px;
             }
-            
-            .btn {
-                padding: 12px 20px;
-                font-size: 1rem;
-            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎯 CoinFlip Duelo - Grupo</h1>
-            <p>Desafia a tus amigos en el grupo y gana puntos</p>
+            <h1>🎯 CoinFlip Duelo - Telegram</h1>
+            <p>¡Desafia a tus amigos y gana puntos!</p>
         </div>
 
-        <div class="group-info">
-            <p>💬 Usa <strong>/pvp [cantidad]</strong> en el grupo para crear un duelo</p>
-            <p>✅ Presiona <strong>"Unirse al Duelo"</strong> en el mensaje del bot</p>
+        <div class="instructions">
+            <h3>📋 Cómo jugar:</h3>
+            <ol>
+                <li>Envía <strong>/pvp [cantidad]</strong> en el chat del grupo</li>
+                <li>Presiona <strong>"Unirse al Duelo"</strong> en el mensaje del bot</li>
+                <li>El duelo comenzará automáticamente en 10 segundos</li>
+                <li>¡Gana puntos y sube en el leaderboard!</li>
+            </ol>
         </div>
 
-        <div id="status-banner" class="status-banner hidden">
-            <span id="status-text"></span>
+        <div id="status-banner" class="status-banner status-waiting">
+            <span id="status-text">✅ Listo para un nuevo duelo</span>
         </div>
 
         <div class="duel-card">
@@ -411,7 +368,7 @@
                 <div class="player" id="player-a">
                     <h3>Jugador A</h3>
                     <p id="player-a-name">Esperando...</p>
-                    <p id="player-a-id"></p>
+                    <p id="player-a-username" class="username"></p>
                 </div>
                 
                 <div class="vs">VS</div>
@@ -419,12 +376,12 @@
                 <div class="player" id="player-b">
                     <h3>Jugador B</h3>
                     <p id="player-b-name">Disponible</p>
-                    <p id="player-b-id"></p>
+                    <p id="player-b-username" class="username"></p>
                 </div>
             </div>
 
             <div class="bet-amount">
-                💰 <span id="bet-amount">10</span> puntos en juego
+                💰 <span id="bet-amount">0</span> puntos en juego
             </div>
 
             <div class="coin-section">
@@ -446,7 +403,7 @@
 
         <div class="telegram-link">
             <a href="https://t.me/IMPRENTA_ROBOT/CoinFlip" target="_blank">
-                📱 Ver este duelo en Telegram
+                📱 Abrir en Telegram
             </a>
         </div>
 
@@ -466,126 +423,79 @@
         let gameState = {
             playerA: null,
             playerB: null,
-            betAmount: 10,
+            betAmount: 0,
             status: 'waiting', // waiting, countdown, in-progress, completed
             winner: null,
             countdown: 10,
             history: [],
-            currentDuelId: null,
-            isGroup: true
-        };
-
-        // Simulación de conexión con el bot de Telegram
-        const simulateGroupConnection = {
-            init() {
-                console.log("Simulando conexión con grupo de Telegram...");
-                
-                // Simular recepción de mensajes del grupo cada 3 segundos
-                setInterval(() => {
-                    this.simulateGroupMessage();
-                }, 3000);
-            },
-            
-            simulateGroupMessage() {
-                // Simular diferentes eventos que pueden ocurrir en el grupo
-                const events = [
-                    'create_duel',
-                    'join_duel',
-                    'complete_duel',
-                    'new_message'
-                ];
-                
-                const randomEvent = events[Math.floor(Math.random() * events.length)];
-                
-                switch(randomEvent) {
-                    case 'create_duel':
-                        this.simulateDuelCreation();
-                        break;
-                    case 'join_duel':
-                        this.simulateDuelJoin();
-                        break;
-                    case 'complete_duel':
-                        this.simulateDuelCompletion();
-                        break;
-                    default:
-                        // No hacer nada para otros mensajes
-                        break;
-                }
-            },
-            
-            simulateDuelCreation() {
-                if (gameState.status !== 'waiting') return;
-                
-                const users = [
-                    {id: 1001, firstName: "Alex", username: "alex123"},
-                    {id: 1002, firstName: "Maria", username: "maria_g"},
-                    {id: 1003, firstName: "Carlos", username: "carlos_coin"},
-                    {id: 1004, firstName: "Laura", username: "laura_p"},
-                    {id: 1005, firstName: "Pedro", username: "pedro_r"}
-                ];
-                
-                const randomUser = users[Math.floor(Math.random() * users.length)];
-                const betAmount = Math.floor(Math.random() * 50) + 10;
-                
-                gameState.playerA = randomUser;
-                gameState.betAmount = betAmount;
-                gameState.status = 'waiting';
-                gameState.currentDuelId = 'duel_' + Date.now();
-                
-                updateUI();
-                
-                console.log(`📢 ${randomUser.firstName} creó un duelo por ${betAmount} puntos`);
-            },
-            
-            simulateDuelJoin() {
-                if (gameState.status !== 'waiting' || !gameState.playerA) return;
-                
-                const users = [
-                    {id: 2001, firstName: "Juan", username: "juan88"},
-                    {id: 2002, firstName: "Ana", username: "ana_2023"},
-                    {id: 2003, firstName: "Luis", username: "luis_gamer"},
-                    {id: 2004, firstName: "Sofia", username: "sofia_c"},
-                    {id: 2005, firstName: "Diego", username: "diego_m"}
-                ];
-                
-                const randomUser = users[Math.floor(Math.random() * users.length)];
-                
-                gameState.playerB = randomUser;
-                gameState.status = 'countdown';
-                
-                updateUI();
-                startCountdown();
-                
-                console.log(`✅ ${randomUser.firstName} se unió al duelo`);
-            },
-            
-            simulateDuelCompletion() {
-                if (gameState.status !== 'completed') return;
-                
-                // Reiniciar después de 5 segundos
-                setTimeout(() => {
-                    gameState.playerA = null;
-                    gameState.playerB = null;
-                    gameState.status = 'waiting';
-                    gameState.winner = null;
-                    gameState.countdown = 10;
-                    
-                    updateUI();
-                    
-                    console.log("🔄 Duelo reiniciado, listo para uno nuevo");
-                }, 5000);
-            }
+            currentDuelId: null
         };
 
         // Inicializar la aplicación
         function initApp() {
-            // Iniciar simulación de grupo
-            simulateGroupConnection.init();
-            
             // Configurar el enlace de Telegram correctamente
             document.querySelector('.telegram-link a').href = "https://t.me/IMPRENTA_ROBOT/CoinFlip";
             
+            // Obtener parámetros de la URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const duelId = urlParams.get('duel');
+            
+            // Si hay un ID de duelo en la URL, intentar cargarlo
+            if (duelId) {
+                loadDuel(duelId);
+            } else {
+                updateUI();
+            }
+            
+            // Verificar actualizaciones periódicamente
+            setInterval(checkForUpdates, 2000);
+        }
+
+        // Cargar datos del duelo
+        function loadDuel(duelId) {
+            // En una aplicación real, aquí harías una solicitud a tu API
+            // Para este ejemplo, simulamos la carga de un duelo
+            
+            console.log(`Cargando duelo: ${duelId}`);
+            
+            // Simular datos de un duelo existente
+            const duelData = {
+                playerA: { id: 1001, first_name: "JugadorA", username: "PuraVitaminaA" },
+                playerB: { id: 1002, first_name: "JugadorB", username: "MePideLeche3" },
+                betAmount: 10,
+                status: 'countdown'
+            };
+            
+            gameState.playerA = duelData.playerA;
+            gameState.playerB = duelData.playerB;
+            gameState.betAmount = duelData.betAmount;
+            gameState.status = duelData.status;
+            gameState.currentDuelId = duelId;
+            
             updateUI();
+            
+            // Si el duelo está en countdown, iniciar la cuenta regresiva
+            if (gameState.status === 'countdown') {
+                startCountdown();
+            }
+        }
+
+        // Verificar actualizaciones del duelo
+        function checkForUpdates() {
+            if (!gameState.currentDuelId) return;
+            
+            // En una aplicación real, aquí verificarías el estado actual del duelo
+            // con una solicitud a tu API
+            
+            // Simular actualización del estado
+            if (gameState.status === 'countdown' && gameState.countdown <= 0) {
+                startDuel();
+            } else if (gameState.status === 'completed') {
+                // Después de 5 segundos, reiniciar para nuevo duelo
+                setTimeout(() => {
+                    resetDuel();
+                }, 5000);
+            }
         }
 
         // Iniciar cuenta regresiva de 10 segundos
@@ -605,6 +515,8 @@
                     clearInterval(countdownInterval);
                     startDuel();
                 }
+                
+                updateUI();
             }, 1000);
         }
 
@@ -636,17 +548,22 @@
             addToHistory(gameState.winner, loser, isPlayerAWinner ? 'Cara' : 'Cruz');
             
             updateUI();
+        }
+
+        // Reiniciar duelo
+        function resetDuel() {
+            gameState.playerA = null;
+            gameState.playerB = null;
+            gameState.status = 'waiting';
+            gameState.winner = null;
+            gameState.countdown = 10;
+            gameState.betAmount = 0;
+            gameState.currentDuelId = null;
             
-            // Después de 5 segundos, reiniciar para nuevo duelo
-            setTimeout(() => {
-                gameState.playerA = null;
-                gameState.playerB = null;
-                gameState.status = 'waiting';
-                gameState.winner = null;
-                gameState.countdown = 10;
-                
-                updateUI();
-            }, 5000);
+            // Limpiar parámetros de la URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            updateUI();
         }
 
         // Añadir partida al historial
@@ -658,7 +575,7 @@
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             historyItem.innerHTML = `
-                <span>${winner.firstName} vs ${loser.firstName}</span>
+                <span>${winner.first_name} vs ${loser.first_name}</span>
                 <span>${timeString} (${result})</span>
             `;
             
@@ -672,8 +589,8 @@
             
             // Guardar en el historial del estado
             gameState.history.unshift({
-                winner: winner.firstName,
-                loser: loser.firstName,
+                winner: winner.first_name,
+                loser: loser.first_name,
                 result: result,
                 time: timeString
             });
@@ -683,15 +600,18 @@
         function updateUI() {
             // Actualizar jugadores
             document.getElementById('player-a-name').textContent = 
-                gameState.playerA ? gameState.playerA.firstName : 'Esperando...';
+                gameState.playerA ? gameState.playerA.first_name : 'Esperando...';
             document.getElementById('player-b-name').textContent = 
-                gameState.playerB ? gameState.playerB.firstName : 'Disponible';
+                gameState.playerB ? gameState.playerB.first_name : 'Disponible';
                 
-            // Actualizar IDs de jugadores
-            document.getElementById('player-a-id').textContent = 
+            // Actualizar usernames de jugadores
+            document.getElementById('player-a-username').textContent = 
                 gameState.playerA ? `@${gameState.playerA.username}` : '';
-            document.getElementById('player-b-id').textContent = 
+            document.getElementById('player-b-username').textContent = 
                 gameState.playerB ? `@${gameState.playerB.username}` : '';
+            
+            // Actualizar apuesta
+            document.getElementById('bet-amount').textContent = gameState.betAmount;
             
             // Actualizar estado de los jugadores
             document.getElementById('player-a').classList.toggle('active', gameState.playerA !== null);
@@ -701,8 +621,6 @@
             const statusBanner = document.getElementById('status-banner');
             const statusText = document.getElementById('status-text');
             
-            statusBanner.classList.remove('hidden');
-            
             if (gameState.status === 'waiting') {
                 statusBanner.className = 'status-banner status-waiting';
                 statusText.textContent = gameState.playerA ? 
@@ -710,7 +628,7 @@
                     '✅ Listo para un nuevo duelo';
             } else if (gameState.status === 'countdown') {
                 statusBanner.className = 'status-banner status-countdown';
-                statusText.textContent = '⏰ Duelo comenzando...';
+                statusText.textContent = `⏰ Duelo comenzando en ${gameState.countdown}s...`;
             } else if (gameState.status === 'in-progress') {
                 statusBanner.className = 'status-banner status-countdown';
                 statusText.textContent = '🎯 Moneda girando...';
@@ -725,8 +643,8 @@
                 resultSection.classList.remove('hidden');
                 
                 const loser = gameState.winner === gameState.playerA ? gameState.playerB : gameState.playerA;
-                const winnerName = gameState.winner.firstName || 'Ganador';
-                const loserName = loser.firstName || 'Perdedor';
+                const winnerName = gameState.winner.first_name || 'Ganador';
+                const loserName = loser.first_name || 'Perdedor';
                 const winnerUsername = gameState.winner.username ? ` (@${gameState.winner.username})` : '';
                 const loserUsername = loser.username ? ` (@${loser.username})` : '';
                 
