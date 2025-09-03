@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CoinFlip Duelo</title>
+    <title>CoinFlip Duelo - Grupo</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -63,6 +63,29 @@
 
         .header p {
             opacity: 0.8;
+        }
+
+        .status-banner {
+            padding: 15px;
+            border-radius: var(--border-radius);
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .status-waiting {
+            background-color: var(--warning-color);
+            color: white;
+        }
+
+        .status-countdown {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .status-completed {
+            background-color: var(--success-color);
+            color: white;
         }
 
         .duel-card {
@@ -301,6 +324,14 @@
             gap: 10px;
         }
 
+        .group-info {
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background-color: rgba(64, 167, 227, 0.1);
+            border-radius: var(--border-radius);
+        }
+
         @keyframes flip {
             0% { transform: rotateY(0deg); }
             100% { transform: rotateY(1800deg); }
@@ -362,8 +393,17 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎯 CoinFlip Duelo</h1>
-            <p>Desafia a tus amigos y gana puntos</p>
+            <h1>🎯 CoinFlip Duelo - Grupo</h1>
+            <p>Desafia a tus amigos en el grupo y gana puntos</p>
+        </div>
+
+        <div class="group-info">
+            <p>💬 Usa <strong>/pvp [cantidad]</strong> en el grupo para crear un duelo</p>
+            <p>✅ Presiona <strong>"Unirse al Duelo"</strong> en el mensaje del bot</p>
+        </div>
+
+        <div id="status-banner" class="status-banner hidden">
+            <span id="status-text"></span>
         </div>
 
         <div class="duel-card">
@@ -371,6 +411,7 @@
                 <div class="player" id="player-a">
                     <h3>Jugador A</h3>
                     <p id="player-a-name">Esperando...</p>
+                    <p id="player-a-id"></p>
                 </div>
                 
                 <div class="vs">VS</div>
@@ -378,6 +419,7 @@
                 <div class="player" id="player-b">
                     <h3>Jugador B</h3>
                     <p id="player-b-name">Disponible</p>
+                    <p id="player-b-id"></p>
                 </div>
             </div>
 
@@ -394,11 +436,6 @@
 
             <div id="countdown" class="countdown hidden">
                 ⏰ <span id="countdown-value">10</span>s
-            </div>
-
-            <div class="action-section">
-                <button id="join-btn" class="btn join" onclick="joinDuel()">✅ Unirse al Duelo</button>
-                <button id="create-btn" class="btn create" onclick="createDuel()">⚔️ Crear Nuevo Duelo</button>
             </div>
 
             <div id="result-section" class="result-section hidden">
@@ -433,137 +470,122 @@
             status: 'waiting', // waiting, countdown, in-progress, completed
             winner: null,
             countdown: 10,
-            history: []
+            history: [],
+            currentDuelId: null,
+            isGroup: true
+        };
+
+        // Simulación de conexión con el bot de Telegram
+        const simulateGroupConnection = {
+            init() {
+                console.log("Simulando conexión con grupo de Telegram...");
+                
+                // Simular recepción de mensajes del grupo cada 3 segundos
+                setInterval(() => {
+                    this.simulateGroupMessage();
+                }, 3000);
+            },
+            
+            simulateGroupMessage() {
+                // Simular diferentes eventos que pueden ocurrir en el grupo
+                const events = [
+                    'create_duel',
+                    'join_duel',
+                    'complete_duel',
+                    'new_message'
+                ];
+                
+                const randomEvent = events[Math.floor(Math.random() * events.length)];
+                
+                switch(randomEvent) {
+                    case 'create_duel':
+                        this.simulateDuelCreation();
+                        break;
+                    case 'join_duel':
+                        this.simulateDuelJoin();
+                        break;
+                    case 'complete_duel':
+                        this.simulateDuelCompletion();
+                        break;
+                    default:
+                        // No hacer nada para otros mensajes
+                        break;
+                }
+            },
+            
+            simulateDuelCreation() {
+                if (gameState.status !== 'waiting') return;
+                
+                const users = [
+                    {id: 1001, firstName: "Alex", username: "alex123"},
+                    {id: 1002, firstName: "Maria", username: "maria_g"},
+                    {id: 1003, firstName: "Carlos", username: "carlos_coin"},
+                    {id: 1004, firstName: "Laura", username: "laura_p"},
+                    {id: 1005, firstName: "Pedro", username: "pedro_r"}
+                ];
+                
+                const randomUser = users[Math.floor(Math.random() * users.length)];
+                const betAmount = Math.floor(Math.random() * 50) + 10;
+                
+                gameState.playerA = randomUser;
+                gameState.betAmount = betAmount;
+                gameState.status = 'waiting';
+                gameState.currentDuelId = 'duel_' + Date.now();
+                
+                updateUI();
+                
+                console.log(`📢 ${randomUser.firstName} creó un duelo por ${betAmount} puntos`);
+            },
+            
+            simulateDuelJoin() {
+                if (gameState.status !== 'waiting' || !gameState.playerA) return;
+                
+                const users = [
+                    {id: 2001, firstName: "Juan", username: "juan88"},
+                    {id: 2002, firstName: "Ana", username: "ana_2023"},
+                    {id: 2003, firstName: "Luis", username: "luis_gamer"},
+                    {id: 2004, firstName: "Sofia", username: "sofia_c"},
+                    {id: 2005, firstName: "Diego", username: "diego_m"}
+                ];
+                
+                const randomUser = users[Math.floor(Math.random() * users.length)];
+                
+                gameState.playerB = randomUser;
+                gameState.status = 'countdown';
+                
+                updateUI();
+                startCountdown();
+                
+                console.log(`✅ ${randomUser.firstName} se unió al duelo`);
+            },
+            
+            simulateDuelCompletion() {
+                if (gameState.status !== 'completed') return;
+                
+                // Reiniciar después de 5 segundos
+                setTimeout(() => {
+                    gameState.playerA = null;
+                    gameState.playerB = null;
+                    gameState.status = 'waiting';
+                    gameState.winner = null;
+                    gameState.countdown = 10;
+                    
+                    updateUI();
+                    
+                    console.log("🔄 Duelo reiniciado, listo para uno nuevo");
+                }, 5000);
+            }
         };
 
         // Inicializar la aplicación
         function initApp() {
-            // Obtener parámetros de la URL
-            const urlParams = new URLSearchParams(window.location.search);
-            const duelId = urlParams.get('duel');
+            // Iniciar simulación de grupo
+            simulateGroupConnection.init();
             
-            // Simular datos de usuario (en una app real esto vendría de Telegram)
-            const user = {
-                id: Math.floor(Math.random() * 1000),
-                firstName: 'Jugador ' + Math.floor(Math.random() * 1000),
-                username: 'user' + Math.floor(Math.random() * 1000)
-            };
-            
-            // Guardar usuario actual
-            gameState.currentUser = user;
-            
-            // Si hay un ID de duelo en la URL, unirse automáticamente
-            if (duelId) {
-                joinDuelFromLink(duelId);
-            } else {
-                updateUI();
-            }
-
-            // Simular actualizaciones en tiempo real
-            setInterval(() => {
-                checkForUpdates();
-            }, 3000);
-        }
-
-        // Verificar actualizaciones (simulación)
-        function checkForUpdates() {
-            // En una aplicación real, aquí te conectarías a WebSockets o harías polling al servidor
-            if (gameState.status === 'completed') {
-                // Después de 5 segundos de completado, reiniciar para nuevo duelo
-                setTimeout(() => {
-                    resetForNewDuel();
-                }, 5000);
-            }
-        }
-
-        // Reiniciar para un nuevo duelo
-        function resetForNewDuel() {
-            if (gameState.status === 'completed') {
-                gameState.playerA = null;
-                gameState.playerB = null;
-                gameState.status = 'waiting';
-                gameState.winner = null;
-                gameState.countdown = 10;
-                
-                updateUI();
-            }
-        }
-
-        // Unirse a un duelo desde un enlace
-        function joinDuelFromLink(duelId) {
-            // En una aplicación real, aquí buscarías el duelo en la base de datos
-            // Por ahora simulamos un duelo existente
-            gameState.playerA = {
-                id: 1001,
-                firstName: "Alex",
-                username: "alex123"
-            };
-            gameState.playerB = gameState.currentUser;
-            gameState.status = 'countdown';
+            // Configurar el enlace de Telegram correctamente
+            document.querySelector('.telegram-link a').href = "https://t.me/IMPRENTA_ROBOT/CoinFlip";
             
             updateUI();
-            startCountdown();
-        }
-
-        // Crear un nuevo duelo
-        function createDuel() {
-            if (gameState.status !== 'waiting') {
-                alert('Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.');
-                return;
-            }
-            
-            gameState.playerA = gameState.currentUser;
-            gameState.status = 'waiting';
-            
-            // Generar ID de duelo único
-            gameState.duelId = 'duel_' + Date.now();
-            
-            // Crear enlace para compartir
-            const shareUrl = `${window.location.origin}${window.location.pathname}?duel=${gameState.duelId}`;
-            
-            // En una app real, aquí enviarías el mensaje con el teclado inline a Telegram
-            console.log('Duelo creado. Compartir URL:', shareUrl);
-            
-            updateUI();
-            
-            // Simular que otro jugador se une después de un tiempo
-            setTimeout(() => {
-                simulateOpponentJoin();
-            }, 3000);
-        }
-
-        // Simular que un oponente se une (para demostración)
-        function simulateOpponentJoin() {
-            if (gameState.status !== 'waiting' || !gameState.playerA) return;
-            
-            const mockUsers = [
-                {id: 1001, firstName: "Alex", username: "alex123"},
-                {id: 1002, firstName: "Maria", username: "maria_g"},
-                {id: 1003, firstName: "Carlos", username: "carlos_coin"}
-            ];
-            
-            const mockUser = mockUsers[Math.floor(Math.random() * mockUsers.length)];
-            
-            gameState.playerB = mockUser;
-            gameState.status = 'countdown';
-            
-            updateUI();
-            
-            // Iniciar cuenta regresiva
-            startCountdown();
-        }
-
-        // Unirse a un duelo existente
-        function joinDuel() {
-            if (gameState.status !== 'waiting' || !gameState.playerA) return;
-            
-            gameState.playerB = gameState.currentUser;
-            gameState.status = 'countdown';
-            
-            updateUI();
-            
-            // Iniciar cuenta regresiva
-            startCountdown();
         }
 
         // Iniciar cuenta regresiva de 10 segundos
@@ -617,7 +639,13 @@
             
             // Después de 5 segundos, reiniciar para nuevo duelo
             setTimeout(() => {
-                resetForNewDuel();
+                gameState.playerA = null;
+                gameState.playerB = null;
+                gameState.status = 'waiting';
+                gameState.winner = null;
+                gameState.countdown = 10;
+                
+                updateUI();
             }, 5000);
         }
 
@@ -658,25 +686,37 @@
                 gameState.playerA ? gameState.playerA.firstName : 'Esperando...';
             document.getElementById('player-b-name').textContent = 
                 gameState.playerB ? gameState.playerB.firstName : 'Disponible';
+                
+            // Actualizar IDs de jugadores
+            document.getElementById('player-a-id').textContent = 
+                gameState.playerA ? `@${gameState.playerA.username}` : '';
+            document.getElementById('player-b-id').textContent = 
+                gameState.playerB ? `@${gameState.playerB.username}` : '';
             
             // Actualizar estado de los jugadores
             document.getElementById('player-a').classList.toggle('active', gameState.playerA !== null);
             document.getElementById('player-b').classList.toggle('active', gameState.playerB !== null);
             
-            // Actualizar botones
-            const joinBtn = document.getElementById('join-btn');
-            const createBtn = document.getElementById('create-btn');
+            // Actualizar banner de estado
+            const statusBanner = document.getElementById('status-banner');
+            const statusText = document.getElementById('status-text');
+            
+            statusBanner.classList.remove('hidden');
             
             if (gameState.status === 'waiting') {
-                joinBtn.disabled = !gameState.playerA;
-                createBtn.disabled = !!gameState.playerA;
-                joinBtn.classList.remove('hidden');
-                createBtn.classList.remove('hidden');
-            } else {
-                joinBtn.disabled = true;
-                createBtn.disabled = true;
-                joinBtn.classList.add('hidden');
-                createBtn.classList.add('hidden');
+                statusBanner.className = 'status-banner status-waiting';
+                statusText.textContent = gameState.playerA ? 
+                    '⏳ Esperando que alguien se una al duelo' : 
+                    '✅ Listo para un nuevo duelo';
+            } else if (gameState.status === 'countdown') {
+                statusBanner.className = 'status-banner status-countdown';
+                statusText.textContent = '⏰ Duelo comenzando...';
+            } else if (gameState.status === 'in-progress') {
+                statusBanner.className = 'status-banner status-countdown';
+                statusText.textContent = '🎯 Moneda girando...';
+            } else if (gameState.status === 'completed') {
+                statusBanner.className = 'status-banner status-completed';
+                statusText.textContent = '✅ Duelo completado';
             }
             
             // Mostrar resultado si el duelo está completado
@@ -699,6 +739,8 @@
                 `;
                 
                 // Marcar jugador ganador
+                document.getElementById('player-a').classList.remove('winner');
+                document.getElementById('player-b').classList.remove('winner');
                 document.getElementById(gameState.winner === gameState.playerA ? 'player-a' : 'player-b')
                     .classList.add('winner');
             } else {
