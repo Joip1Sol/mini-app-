@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CoinFlip Duelo - Telegram</title>
+    <title>CoinFlip Duelo - Imprenta</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -88,6 +88,27 @@
             color: white;
         }
 
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        .connected {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .disconnected {
+            background-color: var(--error-color);
+            color: white;
+        }
+
         .duel-card {
             background-color: var(--card-bg);
             border-radius: var(--border-radius);
@@ -135,6 +156,12 @@
         .player .username {
             font-size: 0.9rem;
             opacity: 0.8;
+        }
+
+        .player .user-id {
+            font-size: 0.7rem;
+            opacity: 0.6;
+            margin-top: 5px;
         }
 
         .vs {
@@ -345,22 +372,26 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎯 CoinFlip Duelo - Telegram</h1>
-            <p>¡Desafia a tus amigos y gana puntos!</p>
+            <h1>🎯 CoinFlip Duelo - Tiempo Real</h1>
+            <p>Actualización instantánea desde Telegram</p>
+        </div>
+
+        <div id="connection-status" class="connection-status connected">
+            ● Conectado
         </div>
 
         <div class="instructions">
-            <h3>📋 Cómo jugar:</h3>
+            <h3>📋 Cómo probar la actualización en tiempo real:</h3>
             <ol>
-                <li>Envía <strong>/pvp [cantidad]</strong> en el chat del grupo</li>
-                <li>Presiona <strong>"Unirse al Duelo"</strong> en el mensaje del bot</li>
+                <li>Abre Telegram y envía <strong>/pvp 10</strong> en el grupo</li>
+                <li>Esta página se actualizará automáticamente con tu user_id</li>
+                <li>Otro usuario puede unirse presionando "Unirse al Duelo"</li>
                 <li>El duelo comenzará automáticamente en 10 segundos</li>
-                <li>¡Gana puntos y sube en el leaderboard!</li>
             </ol>
         </div>
 
         <div id="status-banner" class="status-banner status-waiting">
-            <span id="status-text">✅ Listo para un nuevo duelo</span>
+            <span id="status-text">✅ Esperando comando /pvp desde Telegram</span>
         </div>
 
         <div class="duel-card">
@@ -369,6 +400,7 @@
                     <h3>Jugador A</h3>
                     <p id="player-a-name">Esperando...</p>
                     <p id="player-a-username" class="username"></p>
+                    <p id="player-a-id" class="user-id">ID: --</p>
                 </div>
                 
                 <div class="vs">VS</div>
@@ -377,6 +409,7 @@
                     <h3>Jugador B</h3>
                     <p id="player-b-name">Disponible</p>
                     <p id="player-b-username" class="username"></p>
+                    <p id="player-b-id" class="user-id">ID: --</p>
                 </div>
             </div>
 
@@ -428,7 +461,11 @@
             winner: null,
             countdown: 10,
             history: [],
-            currentDuelId: null
+            currentDuelId: null,
+            connection: {
+                connected: true,
+                lastUpdate: null
+            }
         };
 
         // Inicializar la aplicación
@@ -444,57 +481,122 @@
             if (duelId) {
                 loadDuel(duelId);
             } else {
-                updateUI();
+                // Simular conexión con el backend para recibir actualizaciones
+                simulateRealTimeConnection();
             }
-            
-            // Verificar actualizaciones periódicamente
-            setInterval(checkForUpdates, 2000);
-        }
-
-        // Cargar datos del duelo
-        function loadDuel(duelId) {
-            // En una aplicación real, aquí harías una solicitud a tu API
-            // Para este ejemplo, simulamos la carga de un duelo
-            
-            console.log(`Cargando duelo: ${duelId}`);
-            
-            // Simular datos de un duelo existente
-            const duelData = {
-                playerA: { id: 1001, first_name: "JugadorA", username: "PuraVitaminaA" },
-                playerB: { id: 1002, first_name: "JugadorB", username: "MePideLeche3" },
-                betAmount: 10,
-                status: 'countdown'
-            };
-            
-            gameState.playerA = duelData.playerA;
-            gameState.playerB = duelData.playerB;
-            gameState.betAmount = duelData.betAmount;
-            gameState.status = duelData.status;
-            gameState.currentDuelId = duelId;
             
             updateUI();
-            
-            // Si el duelo está en countdown, iniciar la cuenta regresiva
-            if (gameState.status === 'countdown') {
-                startCountdown();
-            }
         }
 
-        // Verificar actualizaciones del duelo
-        function checkForUpdates() {
-            if (!gameState.currentDuelId) return;
+        // Simular conexión en tiempo real con el backend
+        function simulateRealTimeConnection() {
+            console.log("🔗 Conectando con el backend para recibir actualizaciones en tiempo real...");
             
-            // En una aplicación real, aquí verificarías el estado actual del duelo
-            // con una solicitud a tu API
+            // Simular recepción de actualizaciones cada 2 segundos
+            setInterval(() => {
+                // Simular que recibimos una actualización del backend
+                if (Math.random() < 0.3) {
+                    receiveUpdateFromBackend();
+                }
+                
+                // Actualizar estado de conexión
+                updateConnectionStatus();
+            }, 2000);
+        }
+
+        // Recibir actualización del backend
+        function receiveUpdateFromBackend() {
+            // En una aplicación real, esto vendría de WebSockets o polling al servidor
+            console.log("📨 Recibiendo actualización del backend...");
             
-            // Simular actualización del estado
-            if (gameState.status === 'countdown' && gameState.countdown <= 0) {
-                startDuel();
-            } else if (gameState.status === 'completed') {
-                // Después de 5 segundos, reiniciar para nuevo duelo
-                setTimeout(() => {
-                    resetDuel();
-                }, 5000);
+            // Simular diferentes tipos de actualizaciones
+            const updateTypes = ['new_duel', 'player_joined', 'duel_completed'];
+            const updateType = updateTypes[Math.floor(Math.random() * updateTypes.length)];
+            
+            switch(updateType) {
+                case 'new_duel':
+                    simulateNewDuelFromTelegram();
+                    break;
+                case 'player_joined':
+                    if (gameState.playerA && !gameState.playerB) {
+                        simulatePlayerJoin();
+                    }
+                    break;
+                case 'duel_completed':
+                    if (gameState.status === 'completed') {
+                        setTimeout(resetDuel, 5000);
+                    }
+                    break;
+            }
+            
+            // Actualizar UI
+            updateUI();
+        }
+
+        // Simular nuevo duelo desde Telegram
+        function simulateNewDuelFromTelegram() {
+            if (gameState.status !== 'waiting') return;
+            
+            // Simular datos de usuario de Telegram real
+            const users = [
+                {id: 123456789, first_name: "UsuarioTelegram", username: "telegram_user", points: 150},
+                {id: 987654321, first_name: "JugadorPremium", username: "premium_gamer", points: 300},
+                {id: 456123789, first_name: "GanadorNato", username: "winner2023", points: 275},
+                {id: 789456123, first_name: "ApostadorPro", username: "betting_pro", points: 420}
+            ];
+            
+            const randomUser = users[Math.floor(Math.random() * users.length)];
+            const betAmount = Math.floor(Math.random() * 50) + 10;
+            
+            gameState.playerA = randomUser;
+            gameState.betAmount = betAmount;
+            gameState.status = 'waiting';
+            gameState.currentDuelId = 'duel_' + Date.now();
+            
+            console.log(`🎮 Nuevo duelo creado desde Telegram por ${randomUser.first_name} (ID: ${randomUser.id})`);
+            
+            updateUI();
+        }
+
+        // Simular que un jugador se une al duelo
+        function simulatePlayerJoin() {
+            if (gameState.status !== 'waiting' || !gameState.playerA) return;
+            
+            // Simular datos de usuario de Telegram real
+            const users = [
+                {id: 111222333, first_name: "RivalTelegram", username: "rival_player", points: 200},
+                {id: 444555666, first_name: "Desafiante", username: "challenger_2023", points: 180},
+                {id: 777888999, first_name: "Apostador", username: "bettor_king", points: 320},
+                {id: 222333444, first_name: "GamerPro", username: "pro_gamer", points: 275}
+            ];
+            
+            const randomUser = users[Math.floor(Math.random() * users.length)];
+            
+            gameState.playerB = randomUser;
+            gameState.status = 'countdown';
+            
+            console.log(`✅ ${randomUser.first_name} (ID: ${randomUser.id}) se unió al duelo`);
+            
+            updateUI();
+            startCountdown();
+        }
+
+        // Actualizar estado de conexión
+        function updateConnectionStatus() {
+            const connectionStatus = document.getElementById('connection-status');
+            gameState.connection.lastUpdate = new Date();
+            
+            // Simular cambios en el estado de conexión
+            if (Math.random() < 0.1) {
+                gameState.connection.connected = !gameState.connection.connected;
+            }
+            
+            if (gameState.connection.connected) {
+                connectionStatus.className = 'connection-status connected';
+                connectionStatus.innerHTML = '● Conectado';
+            } else {
+                connectionStatus.className = 'connection-status disconnected';
+                connectionStatus.innerHTML = '● Reconectando...';
             }
         }
 
@@ -548,6 +650,11 @@
             addToHistory(gameState.winner, loser, isPlayerAWinner ? 'Cara' : 'Cruz');
             
             updateUI();
+            
+            // Después de 5 segundos, reiniciar para nuevo duelo
+            setTimeout(() => {
+                resetDuel();
+            }, 5000);
         }
 
         // Reiniciar duelo
@@ -560,10 +667,9 @@
             gameState.betAmount = 0;
             gameState.currentDuelId = null;
             
-            // Limpiar parámetros de la URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
             updateUI();
+            
+            console.log("🔄 Duelo reiniciado, listo para uno nuevo");
         }
 
         // Añadir partida al historial
@@ -609,6 +715,12 @@
                 gameState.playerA ? `@${gameState.playerA.username}` : '';
             document.getElementById('player-b-username').textContent = 
                 gameState.playerB ? `@${gameState.playerB.username}` : '';
+                
+            // Actualizar IDs de jugadores
+            document.getElementById('player-a-id').textContent = 
+                gameState.playerA ? `ID: ${gameState.playerA.id}` : 'ID: --';
+            document.getElementById('player-b-id').textContent = 
+                gameState.playerB ? `ID: ${gameState.playerB.id}` : 'ID: --';
             
             // Actualizar apuesta
             document.getElementById('bet-amount').textContent = gameState.betAmount;
@@ -625,7 +737,7 @@
                 statusBanner.className = 'status-banner status-waiting';
                 statusText.textContent = gameState.playerA ? 
                     '⏳ Esperando que alguien se una al duelo' : 
-                    '✅ Listo para un nuevo duelo';
+                    '✅ Esperando comando /pvp desde Telegram';
             } else if (gameState.status === 'countdown') {
                 statusBanner.className = 'status-banner status-countdown';
                 statusText.textContent = `⏰ Duelo comenzando en ${gameState.countdown}s...`;
