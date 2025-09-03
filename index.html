@@ -413,6 +413,10 @@
 
         // Inicializar la aplicación
         function initApp() {
+            // Obtener parámetros de la URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const duelId = urlParams.get('duel');
+            
             // Simular datos de usuario (en una app real esto vendría de Telegram)
             const user = {
                 id: Math.floor(Math.random() * 1000),
@@ -423,8 +427,28 @@
             // Guardar usuario actual
             gameState.currentUser = user;
             
-            // Actualizar UI
+            // Si hay un ID de duelo en la URL, unirse automáticamente
+            if (duelId) {
+                joinDuelFromLink(duelId);
+            } else {
+                updateUI();
+            }
+        }
+
+        // Unirse a un duelo desde un enlace
+        function joinDuelFromLink(duelId) {
+            // En una aplicación real, aquí buscarías el duelo en la base de datos
+            // Por ahora simulamos un duelo existente
+            gameState.playerA = {
+                id: 1001,
+                firstName: "Alex",
+                username: "alex123"
+            };
+            gameState.playerB = gameState.currentUser;
+            gameState.status = 'countdown';
+            
             updateUI();
+            startCountdown();
         }
 
         // Crear un nuevo duelo
@@ -434,13 +458,13 @@
             gameState.playerA = gameState.currentUser;
             gameState.status = 'waiting';
             
-            // Simular ID de duelo
+            // Generar ID de duelo único
             gameState.duelId = 'duel_' + Date.now();
             
-            // Generar teclado inline para compartir
+            // Crear enlace para compartir
             const shareUrl = `${window.location.origin}${window.location.pathname}?duel=${gameState.duelId}`;
             
-            // En una app real, aquí enviaríamos el mensaje con el teclado inline a Telegram
+            // En una app real, aquí enviarías el mensaje con el teclado inline a Telegram
             console.log('Duelo creado. Compartir URL:', shareUrl);
             
             updateUI();
