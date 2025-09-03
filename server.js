@@ -55,6 +55,12 @@ connectDB().then(() => {
 function broadcastDuelUpdate(duel) {
   activeDuel = duel;
   io.emit('duel-update', duel);
+  
+  // También guardar en archivo para persistencia
+  if (duel) {
+    const fs = require('fs');
+    fs.writeFileSync('current-duel.json', JSON.stringify(duel, null, 2));
+  }
 }
 
 // WebSocket para actualizaciones en tiempo real
@@ -74,13 +80,25 @@ io.on('connection', (socket) => {
 // API para obtener el duelo activo
 app.get('/api/active-duel', async (req, res) => {
   try {
+    // Primero intentar obtener de memoria
     if (activeDuel) {
-      const Duel = require('./models/Duel');
-      const updatedDuel = await Duel.getDuelById(activeDuel._id);
-      res.json(updatedDuel);
-    } else {
-      res.json(null);
+      return res.json(activeDuel);
     }
+    
+    // Si no hay en memoria, intentar cargar desde archivo
+    try {
+      const fs = require('fs');
+      if (fs.existsSync('current-duel.json')) {
+        const duelData = JSON.parse(fs.readFileSync('current-duel.json', 'utf8'));
+        activeDuel = duelData;
+        return res.json(activeDuel);
+      }
+    } catch (error) {
+      console.log('No se pudo cargar duelo desde archivo');
+    }
+    
+    // Si no hay duelo activo
+    res.json(null);
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo duelo activo' });
   }
@@ -93,16 +111,77 @@ app.post('/api/join-duel', async (req, res) => {
       return res.status(400).json({ error: 'No hay duelos activos' });
     }
 
-    const { userId, userName } = req.body;
+    const { userId, userName, userUsername } = req.body;
     
+    // Verificar si el usuario ya está en el duelo
+    if (activeDuel.playerA && activeDuel.playerA.telegramId === userId) {
+      return res.status(400).json({ error: 'Ya eres el jugador A en este duelo' });
+    }
+    
+    if (activeDuel.playerB && activeDuel.playerB.telegramId === userId) {
+      return res.status(400).json({ error: 'Ya eres el jugador B en este duelo' });
+    }
+
     // Simular la unión al duelo
-    const user = { telegramId: userId, first_name: userName };
+    const user = { 
+      telegramId: userId, 
+      first_name: userName,
+      username: userUsername
+    };
     
-    const Duel = require('./models/Duel');
-    const updatedDuel = await Duel.joinDuel(activeDuel._id, user);
-    broadcastDuelUpdate(updatedDuel);
+    // Actualizar el duelo activo
+    activeDuel.playerB = user;
+    activeDuel.status = 'countdown';
     
-    res.json({ success: true, duel: updatedDuel });
+    // Configurar tiempo de expiración del countdown
+    activeDuel.countdownEnd = new Date(Date.now() + 15000);
+    
+    // Notificar a todos los clientes
+    broadcastDuelUpdate(activeDuel);
+    
+    res.json({ success: true, duel: activeDuel });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para crear un nuevo duelo
+app.post('/api/create-duel', async (req, res) => {
+  try {
+    if (activeDuel && activeDuel.status !== 'completed') {
+      return res.status(400).json({ error: 'Ya hay un duelo en progreso' });
+    }
+
+    const { userId, userName, userUsername, betAmount } = req.body;
+    
+    const user = { 
+      telegramId: userId, 
+      first_name: userName,
+      username: userUsername
+    };
+    
+    // Crear nuevo duelo
+    activeDuel = {
+      _id: 'duel_' + Date.now(),
+      playerA: user,
+      playerB: null,
+      betAmount: betAmount || 10,
+      status: 'waiting',
+      winner: null,
+      loser: null,
+      chatId: null,
+      messageId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutos
+      countdownStart: null,
+      countdownEnd: null
+    };
+    
+    // Notificar a todos los clientes
+    broadcastDuelUpdate(activeDuel);
+    
+    res.json({ success: true, duel: activeDuel });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -120,8 +199,7 @@ app.get('/health', (req, res) => {
 
 // Ruta principal - SINGLE PAGE APPLICATION
 app.get('/', (req, res) => {
-  res.header('Content-Type', 'text/html; charset=utf-8');
-  res.send(generateSPAHTML());
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Comandos de Telegram
@@ -138,7 +216,7 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
 bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   try {
     // Si ya hay un duelo activo, no permitir crear otro
-    if (activeDuel) {
+    if (activeDuel && activeDuel.status !== 'completed') {
       return bot.sendMessage(msg.chat.id, 
         '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.'
       );
@@ -201,29 +279,16 @@ server.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log(`🤖 Bot de Telegram iniciado`);
   console.log(`🌐 SPA disponible en: http://localhost:${PORT}`);
+  
+  // Cargar duelo activo desde archivo al iniciar
+  try {
+    const fs = require('fs');
+    if (fs.existsSync('current-duel.json')) {
+      const duelData = JSON.parse(fs.readFileSync('current-duel.json', 'utf8'));
+      activeDuel = duelData;
+      console.log('✅ Duelo activo cargado desde archivo');
+    }
+  } catch (error) {
+    console.log('ℹ️ No se encontró duelo activo para cargar');
+  }
 });
-
-// Función para generar la Single Page Application
-function generateSPAHTML() {
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CoinFlip Duelo</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <style>
-        /* Estilos CSS aquí */
-    </style>
-</head>
-<body>
-    <div class="container">
-        <!-- Interfaz de usuario aquí -->
-    </div>
-
-    <script>
-        // Código JavaScript aquí
-    </script>
-</body>
-</html>`;
-}

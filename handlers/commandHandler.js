@@ -62,13 +62,35 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       );
     }
 
-    // Crear duelo
+    // Crear duelo en la base de datos
     const duel = await Duel.createDuel({
       playerA: user,
       betAmount: betAmount,
       chatId: msg.chat.id,
       messageId: null
     });
+
+    // ✅ SOLUCIÓN: Enviar solicitud a la API para crear el duelo en el servidor web
+    try {
+      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/create-duel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.telegramId,
+          userName: user.first_name,
+          userUsername: user.username,
+          betAmount: betAmount
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al crear duelo en el servidor web');
+      }
+    } catch (error) {
+      console.error('Error conectando con el servidor web:', error);
+    }
 
     // ✅ SOLUCIÓN: Solo usar botones inline (sin web_app)
     const replyMarkup = {
@@ -158,12 +180,33 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
+    // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
+    try {
+      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/join-duel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.telegramId,
+          userName: user.first_name,
+          userUsername: user.username
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al unirse al duelo en el servidor web');
+      }
+    } catch (error) {
+      console.error('Error conectando con el servidor web:', error);
+    }
+    
     // ✅ SOLUCIÓN: Solo botones inline sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
           text: '🎮 Ver Duelo',
-          url: `https://t.me/${bot.options.username}?start=duel_${duelId}`
+          url: `https://t.me/IMPRENTA_ROBOT/CoinFlip`
         }]
       ]
     };
@@ -238,6 +281,27 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
+    // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
+    try {
+      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/join-duel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: user.telegramId,
+          userName: user.first_name,
+          userUsername: user.username
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al unirse al duelo en el servidor web');
+      }
+    } catch (error) {
+      console.error('Error conectando con el servidor web:', error);
+    }
+    
     // Notificar a todos los clientes conectados
     if (broadcastDuelUpdate) {
       broadcastDuelUpdate(updatedDuel);
@@ -248,7 +312,7 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       inline_keyboard: [
         [{
           text: '🎮 Ver Duelo',
-          url: `https://t.me/${bot.options.username}?start=duel_${duelId}`
+          url: `https://t.me/IMPRENTA_ROBOT/CoinFlip`
         }]
       ]
     };
