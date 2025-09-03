@@ -10,7 +10,7 @@ class User {
     if (!user) {
       const newUser = {
         telegramId: telegramUser.id,
-        firstName: telegramUser.first_name || 'Usuario',
+        first_name: telegramUser.first_name || 'Usuario',
         username: telegramUser.username,
         points: 100,
         duelsWon: 0,

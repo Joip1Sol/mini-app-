@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CoinFlip Duelo - Imprenta</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root {
             --primary-color: #40a7e3;
@@ -468,130 +469,57 @@
             }
         };
 
+        // Inicializar Socket.IO
+        const socket = io();
+
         // Inicializar la aplicación
         function initApp() {
-            // Configurar el enlace de Telegram correctamente
-            document.querySelector('.telegram-link a').href = "https://t.me/IMPRENTA_ROBOT/CoinFlip";
-            
-            // Obtener parámetros de la URL
-            const urlParams = new URLSearchParams(window.location.search);
-            const duelId = urlParams.get('duel');
-            
-            // Si hay un ID de duelo en la URL, intentar cargarlo
-            if (duelId) {
-                loadDuel(duelId);
-            } else {
-                // Simular conexión con el backend para recibir actualizaciones
-                simulateRealTimeConnection();
-            }
-            
+            initWebSocket();
             updateUI();
         }
 
-        // Simular conexión en tiempo real con el backend
-        function simulateRealTimeConnection() {
-            console.log("🔗 Conectando con el backend para recibir actualizaciones en tiempo real...");
-            
-            // Simular recepción de actualizaciones cada 2 segundos
-            setInterval(() => {
-                // Simular que recibimos una actualización del backend
-                if (Math.random() < 0.3) {
-                    receiveUpdateFromBackend();
+        function initWebSocket() {
+            socket.on('duel-update', (duel) => {
+                console.log('📨 Recibiendo actualización del backend...', duel);
+                
+                if (duel) {
+                    gameState.playerA = duel.playerA;
+                    gameState.playerB = duel.playerB;
+                    gameState.betAmount = duel.betAmount;
+                    gameState.status = duel.status;
+                    gameState.winner = duel.winner;
+                    gameState.currentDuelId = duel._id;
+                    
+                    if (duel.status === 'countdown') {
+                        startCountdown();
+                    } else if (duel.status === 'in-progress') {
+                        startDuel();
+                    } else if (duel.status === 'completed') {
+                        determineWinner(); // Actualizar UI con ganador
+                    }
+                } else {
+                    resetDuel();
                 }
                 
-                // Actualizar estado de conexión
-                updateConnectionStatus();
-            }, 2000);
-        }
+                updateUI();
+            });
 
-        // Recibir actualización del backend
-        function receiveUpdateFromBackend() {
-            // En una aplicación real, esto vendría de WebSockets o polling al servidor
-            console.log("📨 Recibiendo actualización del backend...");
-            
-            // Simular diferentes tipos de actualizaciones
-            const updateTypes = ['new_duel', 'player_joined', 'duel_completed'];
-            const updateType = updateTypes[Math.floor(Math.random() * updateTypes.length)];
-            
-            switch(updateType) {
-                case 'new_duel':
-                    simulateNewDuelFromTelegram();
-                    break;
-                case 'player_joined':
-                    if (gameState.playerA && !gameState.playerB) {
-                        simulatePlayerJoin();
-                    }
-                    break;
-                case 'duel_completed':
-                    if (gameState.status === 'completed') {
-                        setTimeout(resetDuel, 5000);
-                    }
-                    break;
-            }
-            
-            // Actualizar UI
-            updateUI();
-        }
+            socket.on('connect', () => {
+                updateConnectionStatus(true);
+            });
 
-        // Simular nuevo duelo desde Telegram
-        function simulateNewDuelFromTelegram() {
-            if (gameState.status !== 'waiting') return;
-            
-            // Simular datos de usuario de Telegram real
-            const users = [
-                {id: 123456789, first_name: "UsuarioTelegram", username: "telegram_user", points: 150},
-                {id: 987654321, first_name: "JugadorPremium", username: "premium_gamer", points: 300},
-                {id: 456123789, first_name: "GanadorNato", username: "winner2023", points: 275},
-                {id: 789456123, first_name: "ApostadorPro", username: "betting_pro", points: 420}
-            ];
-            
-            const randomUser = users[Math.floor(Math.random() * users.length)];
-            const betAmount = Math.floor(Math.random() * 50) + 10;
-            
-            gameState.playerA = randomUser;
-            gameState.betAmount = betAmount;
-            gameState.status = 'waiting';
-            gameState.currentDuelId = 'duel_' + Date.now();
-            
-            console.log(`🎮 Nuevo duelo creado desde Telegram por ${randomUser.first_name} (ID: ${randomUser.id})`);
-            
-            updateUI();
-        }
-
-        // Simular que un jugador se une al duelo
-        function simulatePlayerJoin() {
-            if (gameState.status !== 'waiting' || !gameState.playerA) return;
-            
-            // Simular datos de usuario de Telegram real
-            const users = [
-                {id: 111222333, first_name: "RivalTelegram", username: "rival_player", points: 200},
-                {id: 444555666, first_name: "Desafiante", username: "challenger_2023", points: 180},
-                {id: 777888999, first_name: "Apostador", username: "bettor_king", points: 320},
-                {id: 222333444, first_name: "GamerPro", username: "pro_gamer", points: 275}
-            ];
-            
-            const randomUser = users[Math.floor(Math.random() * users.length)];
-            
-            gameState.playerB = randomUser;
-            gameState.status = 'countdown';
-            
-            console.log(`✅ ${randomUser.first_name} (ID: ${randomUser.id}) se unió al duelo`);
-            
-            updateUI();
-            startCountdown();
+            socket.on('disconnect', () => {
+                updateConnectionStatus(false);
+            });
         }
 
         // Actualizar estado de conexión
-        function updateConnectionStatus() {
+        function updateConnectionStatus(connected) {
             const connectionStatus = document.getElementById('connection-status');
+            gameState.connection.connected = connected;
             gameState.connection.lastUpdate = new Date();
             
-            // Simular cambios en el estado de conexión
-            if (Math.random() < 0.1) {
-                gameState.connection.connected = !gameState.connection.connected;
-            }
-            
-            if (gameState.connection.connected) {
+            if (connected) {
                 connectionStatus.className = 'connection-status connected';
                 connectionStatus.innerHTML = '● Conectado';
             } else {
@@ -639,7 +567,7 @@
             }, 2000);
         }
 
-        // Determinar el ganador
+        // Determinar el ganador (simulado, en real backend lo hace)
         function determineWinner() {
             const isPlayerAWinner = Math.random() > 0.5;
             gameState.winner = isPlayerAWinner ? gameState.playerA : gameState.playerB;
@@ -668,8 +596,6 @@
             gameState.currentDuelId = null;
             
             updateUI();
-            
-            console.log("🔄 Duelo reiniciado, listo para uno nuevo");
         }
 
         // Añadir partida al historial
@@ -685,7 +611,6 @@
                 <span>${timeString} (${result})</span>
             `;
             
-            // Limpiar el placeholder si existe
             if (historyItems.children.length === 1 && 
                 historyItems.children[0].textContent.includes('Esperando')) {
                 historyItems.innerHTML = '';
@@ -693,7 +618,6 @@
             
             historyItems.prepend(historyItem);
             
-            // Guardar en el historial del estado
             gameState.history.unshift({
                 winner: winner.first_name,
                 loser: loser.first_name,
@@ -718,9 +642,9 @@
                 
             // Actualizar IDs de jugadores
             document.getElementById('player-a-id').textContent = 
-                gameState.playerA ? `ID: ${gameState.playerA.id}` : 'ID: --';
+                gameState.playerA ? `ID: ${gameState.playerA.telegramId}` : 'ID: --';
             document.getElementById('player-b-id').textContent = 
-                gameState.playerB ? `ID: ${gameState.playerB.id}` : 'ID: --';
+                gameState.playerB ? `ID: ${gameState.playerB.telegramId}` : 'ID: --';
             
             // Actualizar apuesta
             document.getElementById('bet-amount').textContent = gameState.betAmount;
@@ -754,7 +678,7 @@
             if (gameState.status === 'completed' && gameState.winner) {
                 resultSection.classList.remove('hidden');
                 
-                const loser = gameState.winner === gameState.playerA ? gameState.playerB : gameState.playerA;
+                const loser = gameState.winner.telegramId === gameState.playerA.telegramId ? gameState.playerB : gameState.playerA;
                 const winnerName = gameState.winner.first_name || 'Ganador';
                 const loserName = loser.first_name || 'Perdedor';
                 const winnerUsername = gameState.winner.username ? ` (@${gameState.winner.username})` : '';
@@ -765,13 +689,13 @@
                     <div>👑 <strong>Ganador:</strong> ${winnerName}${winnerUsername}</div>
                     <div>💔 <strong>Perdedor:</strong> ${loserName}${loserUsername}</div>
                     <div>💰 <strong>Premio:</strong> ${gameState.betAmount * 2} puntos</div>
-                    <div>🎯 <strong>Resultado:</strong> ${gameState.winner === gameState.playerA ? '🟡 Cara' : '⚫ Cruz'}</div>
+                    <div>🎯 <strong>Resultado:</strong> ${gameState.winner.telegramId === gameState.playerA.telegramId ? '🟡 Cara' : '⚫ Cruz'}</div>
                 `;
                 
                 // Marcar jugador ganador
                 document.getElementById('player-a').classList.remove('winner');
                 document.getElementById('player-b').classList.remove('winner');
-                document.getElementById(gameState.winner === gameState.playerA ? 'player-a' : 'player-b')
+                document.getElementById(gameState.winner.telegramId === gameState.playerA.telegramId ? 'player-a' : 'player-b')
                     .classList.add('winner');
             } else {
                 resultSection.classList.add('hidden');

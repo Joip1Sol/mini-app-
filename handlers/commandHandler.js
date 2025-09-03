@@ -1,5 +1,5 @@
-const User = require('../models/User');
-const Duel = require('../models/Duel');
+const User = require('../models/user');
+const Duel = require('../models/duel');
 
 // Handler para el comando /start
 async function handleStartCommand(bot, msg) {
@@ -70,9 +70,9 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       messageId: null
     });
 
-    // ✅ SOLUCIÓN: Enviar solicitud a la API para crear el duelo en el servidor web
+    // Enviar solicitud a la API para crear el duelo en el servidor web
     try {
-      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/create-duel`, {
+      const response = await fetch(`${process.env.WEB_URL}/api/create-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -92,7 +92,9 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       console.error('Error conectando con el servidor web:', error);
     }
 
-    // ✅ SOLUCIÓN: Solo usar botones inline (sin web_app)
+    const playerName = user.first_name || 'Jugador';
+    const usernameText = user.username ? ` (@${user.username})` : '';
+
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -101,10 +103,6 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
         }]
       ]
     };
-
-    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
-    const playerName = user.first_name || 'Jugador';
-    const usernameText = user.username ? ` (@${user.username})` : '';
 
     const message = await bot.sendMessage(msg.chat.id, `
 🎮 *Nuevo Duelo Creado* 🎮
@@ -180,9 +178,9 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
+    // Enviar solicitud a la API para unirse al duelo en el servidor web
     try {
-      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/join-duel`, {
+      const response = await fetch(`${process.env.WEB_URL}/api/join-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -201,7 +199,6 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
       console.error('Error conectando con el servidor web:', error);
     }
     
-    // ✅ SOLUCIÓN: Solo botones inline sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -281,9 +278,9 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
+    // Enviar solicitud a la API para unirse al duelo en el servidor web
     try {
-      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/join-duel`, {
+      const response = await fetch(`${process.env.WEB_URL}/api/join-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -307,7 +304,6 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       broadcastDuelUpdate(updatedDuel);
     }
     
-    // ✅ SOLUCIÓN: Solo botones inline sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -317,7 +313,6 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       ]
     };
 
-    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
     const playerAName = duel.playerA.first_name || 'Jugador A';
     const playerBName = user.first_name || 'Jugador B';
     const playerAUsername = duel.playerA.username ? ` (@${duel.playerA.username})` : '';
@@ -375,7 +370,6 @@ async function completeDuel(bot, duelId) {
     await User.updatePoints(loser.telegramId, -duel.betAmount);
     await Duel.completeDuel(duelId, winner);
 
-    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
     const winnerName = winner.first_name || 'Ganador';
     const loserName = loser.first_name || 'Perdedor';
     const winnerUsername = winner.username ? ` (@${winner.username})` : '';
