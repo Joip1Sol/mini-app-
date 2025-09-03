@@ -17,7 +17,7 @@ async function handleStartCommand(bot, msg) {
 /leaderboard - Ver tabla de clasificación
 
 *Tu información:*
-👤 Nombre: ${user.first_name}
+👤 Nombre: ${user.first_name || 'Usuario'}
 💰 Puntos: ${user.points}
     `.trim();
 
@@ -67,34 +67,31 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       playerA: user,
       betAmount: betAmount,
       chatId: msg.chat.id,
-      messageId: null // Se actualizará después
+      messageId: null
     });
 
-    // ✅ CORRECCIÓN: Codificar correctamente la URL para el botón web_app
-    const webAppUrl = `https://mini-app-jr7n.onrender.com?duel=${encodeURIComponent(duel._id.toString())}`;
-    
-    // ✅ CORRECCIÓN: Formato correcto para el botón web_app
+    // ✅ SOLUCIÓN: Solo usar botones inline (sin web_app)
     const replyMarkup = {
       inline_keyboard: [
         [{
           text: '✅ Unirse al Duelo',
-          callback_data: 'join_duel'
-        }],
-        [{
-          text: '🎮 Ver en MiniApp',
-          web_app: { url: webAppUrl }
+          callback_data: `join_duel:${duel._id.toString()}`
         }]
       ]
     };
 
+    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
+    const playerName = user.first_name || 'Jugador';
+    const usernameText = user.username ? ` (@${user.username})` : '';
+
     const message = await bot.sendMessage(msg.chat.id, `
 🎮 *Nuevo Duelo Creado* 🎮
 
-👤 *Jugador A:* ${user.first_name}${user.username ? ` (@${user.username})` : ''}
+👤 *Jugador A:* ${playerName}${usernameText}
 💰 *Apuesta:* ${betAmount} puntos
 ⏰ *Expira en:* 2 minutos
 
-¡Presiona "Unirse al Duelo" para desafiar a ${user.first_name}!
+¡Presiona "Unirse al Duelo" para desafiar a ${playerName}!
     `.trim(), {
       parse_mode: 'Markdown',
       reply_markup: replyMarkup
@@ -161,15 +158,12 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // ✅ CORRECCIÓN: Codificar correctamente la URL para el botón web_app
-    const webAppUrl = `https://mini-app-jr7n.onrender.com?duel=${encodeURIComponent(duelId)}`;
-    
-    // ✅ CORRECCIÓN: Formato correcto para el botón web_app
+    // ✅ SOLUCIÓN: Solo botones inline sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
-          text: '🎮 Ver en MiniApp',
-          web_app: { url: webAppUrl }
+          text: '🎮 Ver Duelo',
+          url: `https://t.me/${bot.options.username}?start=duel_${duelId}`
         }]
       ]
     };
@@ -177,13 +171,11 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     await bot.editMessageText(`
 🎮 *Duelo en Progreso* 🎮
 
-👤 *Jugador A:* ${duel.playerA.first_name}${duel.playerA.username ? ` (@${duel.playerA.username})` : ''}
-👤 *Jugador B:* ${user.first_name}${user.username ? ` (@${user.username})` : ''}
+👤 *Jugador A:* ${duel.playerA.first_name || 'Jugador A'}${duel.playerA.username ? ` (@${duel.playerA.username})` : ''}
+👤 *Jugador B:* ${user.first_name || 'Jugador B'}${user.username ? ` (@${user.username})` : ''}
 💰 *Apuesta:* ${duel.betAmount} puntos
 
 ⏰ *La moneda girará en 15 segundos...*
-
-[Ver animación en MiniApp](${webAppUrl})
     `.trim(), {
       chat_id: duel.chatId,
       message_id: duel.messageId,
@@ -204,60 +196,67 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
   }
 }
 
+// Handler para callback de unirse al duelo
 async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   try {
     const user = await User.findOrCreate(callbackQuery.from);
     const message = callbackQuery.message;
     
-    // Buscar duelos activos en este chat
-    const activeDuel = await Duel.findActiveDuelByChatId(message.chat.id);
+    // Obtener el ID del duelo desde el callback_data
+    const duelId = callbackQuery.data.split(':')[1];
+    
+    const duel = await Duel.getDuelById(duelId);
 
-    if (!activeDuel) {
+    if (!duel) {
       return bot.answerCallbackQuery(callbackQuery.id, {
-        text: '❌ No hay duelos activos en este chat',
+        text: '❌ Duelo no encontrado',
         show_alert: true
       });
     }
 
-    if (activeDuel.playerA.telegramId === user.telegramId) {
+    if (duel.status !== 'waiting') {
+      return bot.answerCallbackQuery(callbackQuery.id, {
+        text: '❌ Este duelo ya no está disponible',
+        show_alert: true
+      });
+    }
+
+    if (duel.playerA.telegramId === user.telegramId) {
       return bot.answerCallbackQuery(callbackQuery.id, {
         text: '❌ No puedes unirte a tu propio duelo',
         show_alert: true
       });
     }
 
-    if (user.points < activeDuel.betAmount) {
+    if (user.points < duel.betAmount) {
       return bot.answerCallbackQuery(callbackQuery.id, {
-        text: `❌ No tienes suficientes puntos (Necesitas: ${activeDuel.betAmount})`,
+        text: `❌ No tienes suficientes puntos (Necesitas: ${duel.betAmount})`,
         show_alert: true
       });
     }
 
     // Unirse al duelo
-    const updatedDuel = await Duel.joinDuel(activeDuel._id.toString(), user);
+    const updatedDuel = await Duel.joinDuel(duelId, user);
     
     // Notificar a todos los clientes conectados
     if (broadcastDuelUpdate) {
       broadcastDuelUpdate(updatedDuel);
     }
     
-    // ✅ CORRECCIÓN: Codificar correctamente la URL para el botón web_app
-    const webAppUrl = `https://mini-app-jr7n.onrender.com?duel=${encodeURIComponent(activeDuel._id.toString())}`;
-    
-    // ✅ CORRECCIÓN: Formato correcto para el botón web_app
+    // ✅ SOLUCIÓN: Solo botones inline sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
-          text: '🎮 Ver en MiniApp',
-          web_app: { url: webAppUrl }
+          text: '🎮 Ver Duelo',
+          url: `https://t.me/${bot.options.username}?start=duel_${duelId}`
         }]
       ]
     };
 
-    // ✅ CORRECCIÓN: Usar first_name en lugar de firstName
-    const playerAName = activeDuel.playerA.first_name || 'Jugador A';
+    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
+    const playerAName = duel.playerA.first_name || 'Jugador A';
     const playerBName = user.first_name || 'Jugador B';
-    const playerAUsername = activeDuel.playerA.username ? ` (@${activeDuel.playerA.username})` : '';
+    const playerAUsername = duel.playerA.username ? ` (@${duel.playerA.username})` : '';
     const playerBUsername = user.username ? ` (@${user.username})` : '';
 
     await bot.editMessageText(`
@@ -265,11 +264,9 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
 
 👤 *Jugador A:* ${playerAName}${playerAUsername}
 👤 *Jugador B:* ${playerBName}${playerBUsername}
-💰 *Apuesta:* ${activeDuel.betAmount} puntos
+💰 *Apuesta:* ${duel.betAmount} puntos
 
 ⏰ *La moneda girará en 15 segundos...*
-
-[Ver animación en MiniApp](${webAppUrl})
     `.trim(), {
       chat_id: message.chat.id,
       message_id: message.message_id,
@@ -283,7 +280,7 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
 
     // Iniciar countdown de 15 segundos
     setTimeout(async () => {
-      await completeDuel(bot, activeDuel._id.toString());
+      await completeDuel(bot, duelId);
     }, 15000);
 
   } catch (error) {
@@ -295,6 +292,7 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   }
 }
 
+// Completar duelo
 async function completeDuel(bot, duelId) {
   try {
     const duel = await Duel.getDuelById(duelId);
@@ -313,21 +311,27 @@ async function completeDuel(bot, duelId) {
     await User.updatePoints(loser.telegramId, -duel.betAmount);
     await Duel.completeDuel(duelId, winner);
 
+    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
+    const winnerName = winner.first_name || 'Ganador';
+    const loserName = loser.first_name || 'Perdedor';
+    const winnerUsername = winner.username ? ` (@${winner.username})` : '';
+    const loserUsername = loser.username ? ` (@${loser.username})` : '';
+
     // Enviar resultado
     await bot.editMessageText(`
 🎉 *Duelo Completado* 🎉
 
-👑 *Ganador:* ${winner.first_name}${winner.username ? ` (@${winner.username})` : ''}
-💔 *Perdedor:* ${loser.first_name}${loser.username ? ` (@${loser.username})` : ''}
+👑 *Ganador:* ${winnerName}${winnerUsername}
+💔 *Perdedor:* ${loserName}${loserUsername}
 💰 *Premio:* ${winnings} puntos
 🎯 *Resultado:* ${resultText === 'heads' ? '🟡 Cara' : '⚫ Cruz'}
 
-¡Felicidades ${winner.first_name}! 🏆
+¡Felicidades ${winnerName}! 🏆
     `.trim(), {
       chat_id: duel.chatId,
       message_id: duel.messageId,
       parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [] } // Remover botones después del duelo
+      reply_markup: { inline_keyboard: [] }
     });
 
   } catch (error) {
