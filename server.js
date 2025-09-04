@@ -24,10 +24,16 @@ const io = socketIo(server, {
 });
 const PORT = process.env.PORT || 3000;
 
-// Configurar bot de Telegram
+// Configurar bot de Telegram - Usar polling en Render
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { 
   polling: true,
-  onlyFirstMatch: true
+  onlyFirstMatch: true,
+  request: {
+    agentOptions: {
+      keepAlive: true,
+      family: 4 // Usar IPv4 para evitar problemas en Render
+    }
+  }
 });
 
 // Variables globales para el duelo activo
@@ -36,7 +42,7 @@ let duelTimeout = null;
 
 // Middleware
 app.use(express.json());
-app.use(express.static('public')); // Servir archivos estáticos desde la carpeta public
+app.use(express.static('public'));
 
 // Configurar CORS
 app.use((req, res, next) => {
@@ -80,12 +86,10 @@ io.on('connection', (socket) => {
 // API para obtener el duelo activo
 app.get('/api/active-duel', async (req, res) => {
   try {
-    // Primero intentar obtener de memoria
     if (activeDuel) {
       return res.json(activeDuel);
     }
     
-    // Si no hay en memoria, intentar cargar desde archivo
     try {
       const fs = require('fs');
       if (fs.existsSync('current-duel.json')) {
@@ -97,7 +101,6 @@ app.get('/api/active-duel', async (req, res) => {
       console.log('No se pudo cargar duelo desde archivo');
     }
     
-    // Si no hay duelo activo
     res.json(null);
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo duelo activo' });
@@ -113,7 +116,6 @@ app.post('/api/join-duel', async (req, res) => {
 
     const { userId, userName, userUsername } = req.body;
     
-    // Verificar si el usuario ya está en el duelo
     if (activeDuel.playerA && activeDuel.playerA.telegramId === userId) {
       return res.status(400).json({ error: 'Ya eres el jugador A en este duelo' });
     }
@@ -122,21 +124,16 @@ app.post('/api/join-duel', async (req, res) => {
       return res.status(400).json({ error: 'Ya eres el jugador B en este duelo' });
     }
 
-    // Simular la unión al duelo
     const user = { 
       telegramId: userId, 
       first_name: userName,
       username: userUsername
     };
     
-    // Actualizar el duelo activo
     activeDuel.playerB = user;
     activeDuel.status = 'countdown';
-    
-    // Configurar tiempo de expiración del countdown
     activeDuel.countdownEnd = new Date(Date.now() + 15000);
     
-    // Notificar a todos los clientes
     broadcastDuelUpdate(activeDuel);
     
     res.json({ success: true, duel: activeDuel });
@@ -160,7 +157,6 @@ app.post('/api/create-duel', async (req, res) => {
       username: userUsername
     };
     
-    // Crear nuevo duelo
     activeDuel = {
       _id: 'duel_' + Date.now(),
       playerA: user,
@@ -173,12 +169,11 @@ app.post('/api/create-duel', async (req, res) => {
       messageId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutos
+      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
       countdownStart: null,
       countdownEnd: null
     };
     
-    // Notificar a todos los clientes
     broadcastDuelUpdate(activeDuel);
     
     res.json({ success: true, duel: activeDuel });
@@ -197,18 +192,28 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Ruta principal - Usa tu index.html existente
+// Ruta principal
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Nueva ruta para el mini app
+// Ruta para el mini app
 app.get('/mini-app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Comandos de Telegram
+// Manejar el comando /start - SOLUCIÓN PARA GRUPOS
 bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
+  // En grupos, el comando /start no funciona igual que en chats privados
+  // Verificar si es un grupo y redirigir al chat privado
+  if (msg.chat.type !== 'private') {
+    const botUsername = process.env.BOT_USERNAME || 'tu_bot';
+    return bot.sendMessage(msg.chat.id, 
+      `¡Hola! Para usar este bot, por favor inicia una conversación privada conmigo: @${botUsername}\n\nLuego podrás usar los comandos en este grupo.`,
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+  
   const deepLinkParam = match && match[1];
   if (deepLinkParam && deepLinkParam.startsWith('duel_')) {
     const duelId = deepLinkParam.replace('duel_', '');
@@ -218,26 +223,47 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   }
 });
 
+// Comando /pvp - SOLUCIÓN PARA GRUPOS
 bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   try {
+    // Verificar si es un grupo
+    if (msg.chat.type === 'private') {
+      return bot.sendMessage(msg.chat.id, 
+        '❌ Este comando solo funciona en grupos. Únete a un grupo y usa /pvp allí.'
+      );
+    }
+    
     // Si ya hay un duelo activo, no permitir crear otro
     if (activeDuel && activeDuel.status !== 'completed') {
       return bot.sendMessage(msg.chat.id, 
-        '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.'
+        '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.',
+        { reply_to_message_id: msg.message_id }
       );
     }
     
     await handlePvpCommand(bot, msg, match, broadcastDuelUpdate);
   } catch (error) {
     console.error('Error en /pvp:', error);
-    bot.sendMessage(msg.chat.id, '❌ Error al crear el duelo');
+    bot.sendMessage(msg.chat.id, '❌ Error al crear el duelo', 
+      { reply_to_message_id: msg.message_id }
+    );
   }
 });
 
+// Comando /points - SOLUCIÓN PARA GRUPOS
 bot.onText(/\/points$/, (msg) => {
+  // En grupos, redirigir al chat privado
+  if (msg.chat.type !== 'private') {
+    const botUsername = process.env.BOT_USERNAME || 'tu_bot';
+    return bot.sendMessage(msg.chat.id, 
+      `Para ver tus puntos, por favor escribe /points en mi chat privado: @${botUsername}`,
+      { reply_to_message_id: msg.message_id }
+    );
+  }
   handlePointsCommand(bot, msg);
 });
 
+// Comando /leaderboard - SOLUCIÓN PARA GRUPOS
 bot.onText(/\/leaderboard$/, async (msg) => {
   try {
     const User = require('./models/User');
@@ -250,10 +276,15 @@ bot.onText(/\/leaderboard$/, async (msg) => {
       message += `${medal} ${index + 1}. ${user.first_name || 'Usuario'} - ${user.points} puntos\n`;
     });
     
-    bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+    bot.sendMessage(msg.chat.id, message, { 
+      parse_mode: 'Markdown',
+      reply_to_message_id: msg.message_id 
+    });
   } catch (error) {
     console.error('Error en /leaderboard:', error);
-    bot.sendMessage(msg.chat.id, '❌ Error al cargar la tabla de clasificación');
+    bot.sendMessage(msg.chat.id, '❌ Error al cargar la tabla de clasificación',
+      { reply_to_message_id: msg.message_id }
+    );
   }
 });
 
@@ -283,8 +314,6 @@ bot.on('error', (error) => {
 server.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log(`🤖 Bot de Telegram iniciado`);
-  console.log(`🌐 SPA disponible en: http://localhost:${PORT}`);
-  console.log(`📱 Mini App disponible en: http://localhost:${PORT}/mini-app`);
   
   // Cargar duelo activo desde archivo al iniciar
   try {

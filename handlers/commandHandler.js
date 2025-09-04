@@ -1,13 +1,13 @@
 const User = require('../models/User');
 const Duel = require('../models/Duel');
 
-// Handler para el comando /start
+// Handler para el comando /start - CORREGIDO
 async function handleStartCommand(bot, msg) {
   try {
     const user = await User.findOrCreate(msg.from);
     
-    // Usar la URL de la aplicación en Render
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
+    // URL de la mini app - CORREGIDO para Render
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
     
     const welcomeMessage = `
 🎮 *Bienvenido a CoinFlip Duel* 🎮
@@ -15,27 +15,32 @@ async function handleStartCommand(bot, msg) {
 ¡Desafia a tus amigos a un duelo de cara o cruz y gana puntos!
 
 *Comandos disponibles:*
-/pvp [cantidad] - Crear un nuevo duelo
+/pvp [cantidad] - Crear un nuevo duelo (solo en grupos)
 /points - Ver tus puntos
 /leaderboard - Ver tabla de clasificación
 
 *Tu información:*
 👤 Nombre: ${user.first_name || 'Usuario'}
 💰 Puntos: ${user.points}
-
-📱 *Juega en nuestra Mini App:* ${webAppUrl}
     `.trim();
+
+    // SOLUCIÓN: Botones corregidos sin web_app que causa BUTTON_TYPE_INVALID
+    const replyMarkup = {
+      inline_keyboard: [
+        [{
+          text: '🎮 Ver Duelos Activos',
+          url: webAppUrl
+        }],
+        [{
+          text: '📊 Ver Mi Puntuación',
+          callback_data: 'show_points'
+        }]
+      ]
+    };
 
     await bot.sendMessage(msg.chat.id, welcomeMessage, {
       parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{
-            text: '🎮 Abrir Mini App',
-            web_app: { url: webAppUrl }
-          }]
-        ]
-      }
+      reply_markup: replyMarkup
     });
   } catch (error) {
     console.error('Error en start command:', error);
@@ -58,7 +63,7 @@ async function handlePointsCommand(bot, msg) {
   }
 }
 
-// Handler para el comando /pvp
+// Handler para el comando /pvp - CORREGIDO
 async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
   try {
     const user = await User.findOrCreate(msg.from);
@@ -66,12 +71,15 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
 
     // Validaciones
     if (betAmount < 1) {
-      return await bot.sendMessage(msg.chat.id, '❌ La apuesta debe ser al menos 1 punto');
+      return await bot.sendMessage(msg.chat.id, '❌ La apuesta debe ser al menos 1 punto',
+        { reply_to_message_id: msg.message_id }
+      );
     }
 
     if (user.points < betAmount) {
       return await bot.sendMessage(msg.chat.id, 
-        `❌ No tienes suficientes puntos. Tienes: ${user.points}, Necesitas: ${betAmount}`
+        `❌ No tienes suficientes puntos. Tienes: ${user.points}, Necesitas: ${betAmount}`,
+        { reply_to_message_id: msg.message_id }
       );
     }
 
@@ -83,46 +91,16 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       messageId: null
     });
 
-    // ✅ SOLUCIÓN: Enviar solicitud a la API para crear el duelo en el servidor web
-    try {
-      const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
-      const response = await fetch(`${webAppUrl}/api/create-duel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId: user.telegramId,
-          userName: user.first_name,
-          userUsername: user.username,
-          betAmount: betAmount
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Error al crear duelo en el servidor web');
-      }
-    } catch (error) {
-      console.error('Error conectando con el servidor web:', error);
-    }
-
-    // ✅ SOLUCIÓN: Usar botones con web_app
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
-    
+    // SOLUCIÓN: Botones corregidos sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
           text: '✅ Unirse al Duelo',
           callback_data: `join_duel:${duel._id.toString()}`
-        }],
-        [{
-          text: '🎮 Ver en Mini App',
-          web_app: { url: `${webAppUrl}/mini-app?duelId=${duel._id.toString()}` }
         }]
       ]
     };
 
-    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
     const playerName = user.first_name || 'Jugador';
     const usernameText = user.username ? ` (@${user.username})` : '';
 
@@ -169,7 +147,9 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
 
   } catch (error) {
     console.error('Error en pvp command:', error);
-    await bot.sendMessage(msg.chat.id, '❌ Error al crear el duelo');
+    await bot.sendMessage(msg.chat.id, '❌ Error al crear el duelo',
+      { reply_to_message_id: msg.message_id }
+    );
   }
 }
 
@@ -200,40 +180,6 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
-    try {
-      const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
-      const response = await fetch(`${webAppUrl}/api/join-duel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId: user.telegramId,
-          userName: user.first_name,
-          userUsername: user.username
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Error al unirse al duelo en el servidor web');
-      }
-    } catch (error) {
-      console.error('Error conectando con el servidor web:', error);
-    }
-    
-    // ✅ SOLUCIÓN: Botones con web_app
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
-    
-    const replyMarkup = {
-      inline_keyboard: [
-        [{
-          text: '🎮 Ver Duelo en Mini App',
-          web_app: { url: `${webAppUrl}/mini-app?duelId=${duelId}` }
-        }]
-      ]
-    };
-
     await bot.editMessageText(`
 🎮 *Duelo en Progreso* 🎮
 
@@ -246,7 +192,7 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
       chat_id: duel.chatId,
       message_id: duel.messageId,
       parse_mode: 'Markdown',
-      reply_markup: replyMarkup
+      reply_markup: { inline_keyboard: [] }
     });
 
     await bot.sendMessage(msg.chat.id, '✅ Te has unido al duelo exitosamente!');
@@ -304,46 +250,11 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
-    try {
-      const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
-      const response = await fetch(`${webAppUrl}/api/join-duel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId: user.telegramId,
-          userName: user.first_name,
-          userUsername: user.username
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Error al unirse al duelo en el servidor web');
-      }
-    } catch (error) {
-      console.error('Error conectando con el servidor web:', error);
-    }
-    
     // Notificar a todos los clientes conectados
     if (broadcastDuelUpdate) {
       broadcastDuelUpdate(updatedDuel);
     }
-    
-    // ✅ SOLUCIÓN: Botones con web_app
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
-    
-    const replyMarkup = {
-      inline_keyboard: [
-        [{
-          text: '🎮 Ver Duelo en Mini App',
-          web_app: { url: `${webAppUrl}/mini-app?duelId=${duelId}` }
-        }]
-      ]
-    };
 
-    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
     const playerAName = duel.playerA.first_name || 'Jugador A';
     const playerBName = user.first_name || 'Jugador B';
     const playerAUsername = duel.playerA.username ? ` (@${duel.playerA.username})` : '';
@@ -361,7 +272,7 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       chat_id: message.chat.id,
       message_id: message.message_id,
       parse_mode: 'Markdown',
-      reply_markup: replyMarkup
+      reply_markup: { inline_keyboard: [] }
     });
 
     await bot.answerCallbackQuery(callbackQuery.id, {
@@ -401,7 +312,6 @@ async function completeDuel(bot, duelId) {
     await User.updatePoints(loser.telegramId, -duel.betAmount);
     await Duel.completeDuel(duelId, winner);
 
-    // ✅ SOLUCIÓN: Usar first_name en lugar de firstName y verificar si existe
     const winnerName = winner.first_name || 'Ganador';
     const loserName = loser.first_name || 'Perdedor';
     const winnerUsername = winner.username ? ` (@${winner.username})` : '';
