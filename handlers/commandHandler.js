@@ -72,7 +72,7 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
 
     // Enviar solicitud a la API para crear el duelo en el servidor web
     try {
-      const response = await fetch(`${process.env.WEB_URL}/api/create-duel`, {
+      const response = await fetch(`${process.env.WEB_URL}/api/telegram/create-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -88,6 +88,10 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       if (!response.ok) {
         throw new Error('Error al crear duelo en el servidor web');
       }
+      
+      const result = await response.json();
+      console.log('✅ Duelo creado en servidor web:', result);
+      
     } catch (error) {
       console.error('Error conectando con el servidor web:', error);
     }
@@ -180,7 +184,7 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     
     // Enviar solicitud a la API para unirse al duelo en el servidor web
     try {
-      const response = await fetch(`${process.env.WEB_URL}/api/join-duel`, {
+      const response = await fetch(`${process.env.WEB_URL}/api/telegram/join-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -195,6 +199,10 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
       if (!response.ok) {
         throw new Error('Error al unirse al duelo en el servidor web');
       }
+      
+      const result = await response.json();
+      console.log('✅ Usuario unido en servidor web:', result);
+      
     } catch (error) {
       console.error('Error conectando con el servidor web:', error);
     }
@@ -280,7 +288,7 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     
     // Enviar solicitud a la API para unirse al duelo en el servidor web
     try {
-      const response = await fetch(`${process.env.WEB_URL}/api/join-duel`, {
+      const response = await fetch(`${process.env.WEB_URL}/api/telegram/join-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -295,6 +303,10 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       if (!response.ok) {
         throw new Error('Error al unirse al duelo en el servidor web');
       }
+      
+      const result = await response.json();
+      console.log('✅ Usuario unido en servidor web:', result);
+      
     } catch (error) {
       console.error('Error conectando con el servidor web:', error);
     }

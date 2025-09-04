@@ -25,20 +25,10 @@ const io = socketIo(server, {
 const PORT = process.env.PORT || 3000;
 
 // Configurar bot de Telegram
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true }); // Polling inicial
-
-// Configurar webhook si WEB_URL está definida
-if (process.env.WEB_URL) {
-  const webhookUrl = `${process.env.WEB_URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`;
-  bot.setWebHook(webhookUrl).then(() => {
-    console.log(`✅ Webhook configurado en ${webhookUrl}`);
-    bot.stopPolling(); // Detener polling si webhook se configura
-  }).catch(error => {
-    console.error('❌ Error configurando webhook:', error);
-  });
-} else {
-  console.log('⚠️ WEB_URL no definida, usando polling temporalmente');
-}
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { 
+  polling: true,
+  onlyFirstMatch: true
+});
 
 // Middleware
 app.use(express.json());
@@ -46,31 +36,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Configurar CORS
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', process.env.WEB_URL || '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  const allowedOrigins = [
+    process.env.WEB_URL,
+    'https://telegram.org',
+    'https://web.telegram.org',
+    'http://localhost:3000'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
   next();
-});
-
-// Ruta para webhook de Telegram
-app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
-
-// Endpoint para configurar webhook manualmente
-app.get('/set-webhook', async (req, res) => {
-  if (!process.env.WEB_URL) {
-    return res.status(400).json({ error: 'WEB_URL no está definida en las variables de entorno' });
-  }
-  try {
-    const webhookUrl = `${process.env.WEB_URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`;
-    await bot.setWebHook(webhookUrl);
-    bot.stopPolling();
-    res.json({ success: true, message: `Webhook configurado en ${webhookUrl}` });
-  } catch (error) {
-    res.status(500).json({ error: 'Error configurando webhook', details: error.message });
-  }
 });
 
 // Conectar a la base de datos
@@ -109,36 +95,21 @@ app.get('/api/active-duel', async (req, res) => {
   }
 });
 
-// API para unirse al duelo activo
-app.post('/api/join-duel', async (req, res) => {
+// API para crear un nuevo duelo (para Telegram)
+app.post('/api/telegram/create-duel', async (req, res) => {
   try {
-    if (!activeDuel || activeDuel.status !== 'waiting') {
-      return res.status(400).json({ error: 'No hay duelos activos' });
-    }
-    const { userId, userName, userUsername } = req.body;
-    if (activeDuel.playerA.telegramId === userId) {
-      return res.status(400).json({ error: 'No puedes unirte a tu propio duelo' });
-    }
-    const user = { telegramId: userId, first_name: userName, username: userUsername };
-    activeDuel.playerB = user;
-    activeDuel.status = 'countdown';
-    activeDuel.countdownStart = new Date();
-    activeDuel.countdownEnd = new Date(Date.now() + 15000);
-    broadcastDuelUpdate(activeDuel);
-    res.json({ success: true, duel: activeDuel });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// API para crear un nuevo duelo
-app.post('/api/create-duel', async (req, res) => {
-  try {
+    const { userId, userName, userUsername, betAmount } = req.body;
+    
     if (activeDuel && activeDuel.status !== 'completed') {
       return res.status(400).json({ error: 'Ya hay un duelo en progreso' });
     }
-    const { userId, userName, userUsername, betAmount } = req.body;
-    const user = { telegramId: userId, first_name: userName, username: userUsername };
+    
+    const user = { 
+      telegramId: userId, 
+      first_name: userName, 
+      username: userUsername 
+    };
+    
     activeDuel = {
       _id: 'duel_' + Date.now(),
       playerA: user,
@@ -155,8 +126,42 @@ app.post('/api/create-duel', async (req, res) => {
       countdownStart: null,
       countdownEnd: null
     };
+    
     broadcastDuelUpdate(activeDuel);
     res.json({ success: true, duel: activeDuel });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para unirse a un duelo (para Telegram)
+app.post('/api/telegram/join-duel', async (req, res) => {
+  try {
+    const { userId, userName, userUsername } = req.body;
+    
+    if (!activeDuel || activeDuel.status !== 'waiting') {
+      return res.status(400).json({ error: 'No hay duelos disponibles' });
+    }
+    
+    if (activeDuel.playerA.telegramId === userId) {
+      return res.status(400).json({ error: 'No puedes unirte a tu propio duelo' });
+    }
+    
+    const user = { 
+      telegramId: userId, 
+      first_name: userName, 
+      username: userUsername 
+    };
+    
+    activeDuel.playerB = user;
+    activeDuel.status = 'countdown';
+    activeDuel.countdownStart = new Date();
+    activeDuel.countdownEnd = new Date(Date.now() + 15000);
+    
+    broadcastDuelUpdate(activeDuel);
+    res.json({ success: true, duel: activeDuel });
+    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -206,7 +211,7 @@ bot.onText(/\/points$/, (msg) => handlePointsCommand(bot, msg));
 
 bot.onText(/\/leaderboard$/, async (msg) => {
   try {
-    const User = require('./models/user.js');
+    const User = require('./models/user');
     const leaderboard = await User.getLeaderboard(10);
     let message = '🏆 *Tabla de Clasificación* 🏆\n\n';
     leaderboard.forEach((user, index) => {
@@ -234,6 +239,6 @@ bot.on('error', (error) => {
 // Iniciar servidor
 server.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
-  console.log(`🤖 Bot de Telegram iniciado (polling temporal)`);
-  console.log(`🌐 Mini App disponible en: ${process.env.WEB_URL || 'pendiente'}`);
+  console.log(`🤖 Bot de Telegram iniciado`);
+  console.log(`🌐 Web URL: ${process.env.WEB_URL || 'No configurada'}`);
 });
