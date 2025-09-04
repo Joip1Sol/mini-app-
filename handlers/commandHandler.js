@@ -293,7 +293,7 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   }
 }
 
-// Completar duelo
+// Completar duelo - FUNCIÓN CORREGIDA
 async function completeDuel(bot, duelId) {
   try {
     const duel = await Duel.getDuelById(duelId);
@@ -334,8 +334,19 @@ async function completeDuel(bot, duelId) {
       reply_markup: { inline_keyboard: [] }
     });
 
+    // IMPORTANTE: Limpiar el duelo activo después de completarse
+    // Esto notificará a todos los clientes que el duelo ha terminado
+    if (typeof global.clearActiveDuel === 'function') {
+      global.clearActiveDuel();
+    }
+
   } catch (error) {
     console.error('Error completando duelo:', error);
+    
+    // Asegurarse de limpiar el duelo incluso si hay error
+    if (typeof global.clearActiveDuel === 'function') {
+      global.clearActiveDuel();
+    }
   }
 }
 
