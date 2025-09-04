@@ -206,7 +206,7 @@ bot.onText(/\/points$/, (msg) => handlePointsCommand(bot, msg));
 
 bot.onText(/\/leaderboard$/, async (msg) => {
   try {
-    const User = require('./models/User.js');
+    const User = require('./models/user.js');
     const leaderboard = await User.getLeaderboard(10);
     let message = '🏆 *Tabla de Clasificación* 🏆\n\n';
     leaderboard.forEach((user, index) => {
