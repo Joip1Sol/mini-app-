@@ -153,7 +153,7 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
   }
 }
 
-// Handler para deep links (start con parámetros)
+// Handler para deep links (start con parámetros) - CORREGIDO
 async function handleDeepLinkJoin(bot, msg, duelId) {
   try {
     const user = await User.findOrCreate(msg.from);
@@ -180,6 +180,17 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
+    // Botones con enlace a la mini app
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+    const replyMarkup = {
+      inline_keyboard: [
+        [{
+          text: '🎮 Míralo aquí',
+          url: 'https://t.me/IMPRENTA_ROBOT/CoinFlip'
+        }]
+      ]
+    };
+
     await bot.editMessageText(`
 🎮 *Duelo en Progreso* 🎮
 
@@ -187,20 +198,20 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
 👤 *Jugador B:* ${user.first_name || 'Jugador B'}${user.username ? ` (@${user.username})` : ''}
 💰 *Apuesta:* ${duel.betAmount} puntos
 
-⏰ *La moneda girará en 15 segundos...*
+⏰ *La moneda girará en 10 segundos...*
     `.trim(), {
       chat_id: duel.chatId,
       message_id: duel.messageId,
       parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [] }
+      reply_markup: replyMarkup
     });
 
     await bot.sendMessage(msg.chat.id, '✅ Te has unido al duelo exitosamente!');
 
-    // Iniciar countdown de 15 segundos
+    // Iniciar countdown de 10 segundos
     setTimeout(async () => {
       await completeDuel(bot, duelId);
-    }, 15000);
+    }, 10000);
 
   } catch (error) {
     console.error('Error en deep link join:', error);
@@ -208,15 +219,13 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
   }
 }
 
-// Handler para callback de unirse al duelo
+// Handler para callback de unirse al duelo - CORREGIDO
 async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   try {
     const user = await User.findOrCreate(callbackQuery.from);
     const message = callbackQuery.message;
     
-    // Obtener el ID del duelo desde el callback_data
     const duelId = callbackQuery.data.split(':')[1];
-    
     const duel = await Duel.getDuelById(duelId);
 
     if (!duel) {
@@ -250,10 +259,19 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // Notificar a todos los clientes conectados
     if (broadcastDuelUpdate) {
       broadcastDuelUpdate(updatedDuel);
     }
+    
+    // Botones con enlace a la mini app
+    const replyMarkup = {
+      inline_keyboard: [
+        [{
+          text: '🎮 Míralo aquí',
+          url: 'https://t.me/IMPRENTA_ROBOT/CoinFlip'
+        }]
+      ]
+    };
 
     const playerAName = duel.playerA.first_name || 'Jugador A';
     const playerBName = user.first_name || 'Jugador B';
@@ -267,22 +285,22 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
 👤 *Jugador B:* ${playerBName}${playerBUsername}
 💰 *Apuesta:* ${duel.betAmount} puntos
 
-⏰ *La moneda girará en 15 segundos...*
+⏰ *La moneda girará en 10 segundos...*
     `.trim(), {
       chat_id: message.chat.id,
       message_id: message.message_id,
       parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [] }
+      reply_markup: replyMarkup
     });
 
     await bot.answerCallbackQuery(callbackQuery.id, {
       text: '✅ Te has unido al duelo!'
     });
 
-    // Iniciar countdown de 15 segundos
+    // Iniciar countdown de 10 segundos
     setTimeout(async () => {
       await completeDuel(bot, duelId);
-    }, 15000);
+    }, 10000);
 
   } catch (error) {
     console.error('Error uniéndose al duelo:', error);

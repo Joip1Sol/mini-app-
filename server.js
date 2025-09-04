@@ -283,7 +283,7 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   }
 });
 
-// Comando /pvp
+// Comando /pvp - CORREGIDO para reenviar mensaje de duelo activo
 bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   try {
     if (msg.chat.type === 'private') {
@@ -298,10 +298,38 @@ bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
         console.log('🕒 Duelo expirado detectado, limpiando...');
         clearActiveDuel();
       } else {
-        return bot.sendMessage(msg.chat.id, 
-          '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.',
-          { reply_to_message_id: msg.message_id }
-        );
+        // Reenviar el mensaje del duelo activo en lugar de solo el mensaje de error
+        try {
+          const replyMarkup = {
+            inline_keyboard: [
+              [{
+                text: '✅ Unirse al Duelo',
+                callback_data: `join_duel:${activeDuel._id}`
+              }]
+            ]
+          };
+          
+          await bot.sendMessage(msg.chat.id, `
+❌ *Ya hay un duelo en progreso* 🎮
+
+👤 *Jugador A:* ${activeDuel.playerA.first_name || 'Jugador A'}${activeDuel.playerA.username ? ` (@${activeDuel.playerA.username})` : ''}
+💰 *Apuesta:* ${activeDuel.betAmount} puntos
+⏰ *Expira en:* ${Math.round((new Date(activeDuel.expiresAt) - new Date()) / 60000)} minutos
+
+¡Presiona "Unirse al Duelo" para unirte al duelo existente!
+          `.trim(), {
+            parse_mode: 'Markdown',
+            reply_markup: replyMarkup,
+            reply_to_message_id: msg.message_id
+          });
+        } catch (error) {
+          console.error('Error enviando mensaje de duelo activo:', error);
+          await bot.sendMessage(msg.chat.id, 
+            '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.',
+            { reply_to_message_id: msg.message_id }
+          );
+        }
+        return;
       }
     }
     
@@ -326,7 +354,7 @@ bot.onText(/\/points$/, (msg) => {
   handlePointsCommand(bot, msg);
 });
 
-// Comando /leaderboard
+// Comando /leaderboard - CORREGIDO
 bot.onText(/\/leaderboard$/, async (msg) => {
   try {
     const User = require('./models/User');
@@ -336,7 +364,11 @@ bot.onText(/\/leaderboard$/, async (msg) => {
     
     leaderboard.forEach((user, index) => {
       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🔸';
-      message += `${medal} ${index + 1}. ${user.first_name || 'Usuario'} - ${user.points} puntos\n`;
+      
+      // Usar first_name, username o "Jugador" como fallback
+      const userName = user.first_name || user.username || 'Jugador';
+      
+      message += `${medal} ${index + 1}. ${userName} - ${user.points} puntos\n`;
     });
     
     bot.sendMessage(msg.chat.id, message, { 

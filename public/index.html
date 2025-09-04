@@ -598,33 +598,37 @@
             updateUI();
         }
 
-        // Añadir partida al historial
-        function addToHistory(winner, loser, result) {
-            const historyItems = document.getElementById('history-items');
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-            
-            const historyItem = document.createElement('div');
-            historyItem.className = 'history-item';
-            historyItem.innerHTML = `
-                <span>${winner.first_name} vs ${loser.first_name}</span>
-                <span>${timeString} (${result})</span>
-            `;
-            
-            if (historyItems.children.length === 1 && 
-                historyItems.children[0].textContent.includes('Esperando')) {
-                historyItems.innerHTML = '';
-            }
-            
-            historyItems.prepend(historyItem);
-            
-            gameState.history.unshift({
-                winner: winner.first_name,
-                loser: loser.first_name,
-                result: result,
-                time: timeString
-            });
-        }
+        // Añadir partida al historial - CORREGIDO
+function addToHistory(winner, loser, result) {
+  const historyItems = document.getElementById('history-items');
+  const now = new Date();
+  const timeString = now.toLocaleTimeString();
+  
+  // Usar first_name o username para evitar "undefined"
+  const winnerName = winner.first_name || winner.username || 'Ganador';
+  const loserName = loser.first_name || loser.username || 'Perdedor';
+  
+  const historyItem = document.createElement('div');
+  historyItem.className = 'history-item';
+  historyItem.innerHTML = `
+    <span>${winnerName} vs ${loserName}</span>
+    <span>${timeString} (${result})</span>
+  `;
+  
+  if (historyItems.children.length === 1 && 
+      historyItems.children[0].textContent.includes('Esperando')) {
+    historyItems.innerHTML = '';
+  }
+  
+  historyItems.prepend(historyItem);
+  
+  gameState.history.unshift({
+    winner: winnerName,
+    loser: loserName,
+    result: result,
+    time: timeString
+  });
+}
 
         // Actualizar la interfaz de usuario
         function updateUI() {

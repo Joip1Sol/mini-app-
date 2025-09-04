@@ -8,10 +8,14 @@ class User {
     let user = await users.findOne({ telegramId: telegramUser.id });
     
     if (!user) {
+      // Asegurar que siempre tengamos un nombre válido
+      const firstName = telegramUser.first_name || 'Jugador';
+      const username = telegramUser.username || null;
+      
       const newUser = {
         telegramId: telegramUser.id,
-        first_name: telegramUser.first_name || 'Usuario',
-        username: telegramUser.username,
+        firstName: firstName,
+        username: username,
         points: 100,
         duelsWon: 0,
         duelsLost: 0,
@@ -42,7 +46,6 @@ class User {
       $set: { updatedAt: new Date() }
     };
 
-    // Actualizar contadores de duelos ganados/perdidos
     if (pointsChange > 0) {
       updateData.$inc.duelsWon = 1;
     } else if (pointsChange < 0) {
