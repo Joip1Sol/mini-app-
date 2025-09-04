@@ -18,7 +18,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: process.env.WEB_URL || "*",
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -30,57 +30,48 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
   onlyFirstMatch: true
 });
 
+// Variables globales para el duelo activo
+let activeDuel = null;
+let duelTimeout = null;
+
 // Middleware
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static('public')); // Servir archivos estáticos desde la carpeta public
 
 // Configurar CORS
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    process.env.WEB_URL,
-    'https://telegram.org',
-    'https://web.telegram.org',
-    'http://localhost:3000'
-  ];
-  
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   next();
 });
 
 // Conectar a la base de datos
 connectDB().then(() => {
   console.log('✅ Base de datos conectada');
-}).catch(error => {
-  console.error('❌ Error conectando a MongoDB:', error);
 });
-
-// Variables globales para el duelo activo
-let activeDuel = null;
 
 // Función para actualizar todos los clientes
 function broadcastDuelUpdate(duel) {
   activeDuel = duel;
   io.emit('duel-update', duel);
+  
+  // También guardar en archivo para persistencia
+  if (duel) {
+    const fs = require('fs');
+    fs.writeFileSync('current-duel.json', JSON.stringify(duel, null, 2));
+  }
 }
 
 // WebSocket para actualizaciones en tiempo real
 io.on('connection', (socket) => {
   console.log('🔗 Cliente conectado a WebSocket');
+  
+  // Enviar el duelo activo inmediatamente al conectar
   if (activeDuel) {
     socket.emit('duel-update', activeDuel);
   }
+  
   socket.on('disconnect', () => {
     console.log('❌ Cliente desconectado');
   });
@@ -89,27 +80,87 @@ io.on('connection', (socket) => {
 // API para obtener el duelo activo
 app.get('/api/active-duel', async (req, res) => {
   try {
-    res.json(activeDuel || null);
+    // Primero intentar obtener de memoria
+    if (activeDuel) {
+      return res.json(activeDuel);
+    }
+    
+    // Si no hay en memoria, intentar cargar desde archivo
+    try {
+      const fs = require('fs');
+      if (fs.existsSync('current-duel.json')) {
+        const duelData = JSON.parse(fs.readFileSync('current-duel.json', 'utf8'));
+        activeDuel = duelData;
+        return res.json(activeDuel);
+      }
+    } catch (error) {
+      console.log('No se pudo cargar duelo desde archivo');
+    }
+    
+    // Si no hay duelo activo
+    res.json(null);
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo duelo activo' });
   }
 });
 
-// API para crear un nuevo duelo (para Telegram)
-app.post('/api/telegram/create-duel', async (req, res) => {
+// API para unirse al duelo activo
+app.post('/api/join-duel', async (req, res) => {
   try {
-    const { userId, userName, userUsername, betAmount } = req.body;
+    if (!activeDuel) {
+      return res.status(400).json({ error: 'No hay duelos activos' });
+    }
+
+    const { userId, userName, userUsername } = req.body;
     
+    // Verificar si el usuario ya está en el duelo
+    if (activeDuel.playerA && activeDuel.playerA.telegramId === userId) {
+      return res.status(400).json({ error: 'Ya eres el jugador A en este duelo' });
+    }
+    
+    if (activeDuel.playerB && activeDuel.playerB.telegramId === userId) {
+      return res.status(400).json({ error: 'Ya eres el jugador B en este duelo' });
+    }
+
+    // Simular la unión al duelo
+    const user = { 
+      telegramId: userId, 
+      first_name: userName,
+      username: userUsername
+    };
+    
+    // Actualizar el duelo activo
+    activeDuel.playerB = user;
+    activeDuel.status = 'countdown';
+    
+    // Configurar tiempo de expiración del countdown
+    activeDuel.countdownEnd = new Date(Date.now() + 15000);
+    
+    // Notificar a todos los clientes
+    broadcastDuelUpdate(activeDuel);
+    
+    res.json({ success: true, duel: activeDuel });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para crear un nuevo duelo
+app.post('/api/create-duel', async (req, res) => {
+  try {
     if (activeDuel && activeDuel.status !== 'completed') {
       return res.status(400).json({ error: 'Ya hay un duelo en progreso' });
     }
+
+    const { userId, userName, userUsername, betAmount } = req.body;
     
     const user = { 
       telegramId: userId, 
-      first_name: userName, 
-      username: userUsername 
+      first_name: userName,
+      username: userUsername
     };
     
+    // Crear nuevo duelo
     activeDuel = {
       _id: 'duel_' + Date.now(),
       playerA: user,
@@ -122,46 +173,15 @@ app.post('/api/telegram/create-duel', async (req, res) => {
       messageId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      expiresAt: new Date(Date.now() + 2 * 60 * 1000),
+      expiresAt: new Date(Date.now() + 2 * 60 * 1000), // 2 minutos
       countdownStart: null,
       countdownEnd: null
     };
     
+    // Notificar a todos los clientes
     broadcastDuelUpdate(activeDuel);
+    
     res.json({ success: true, duel: activeDuel });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// API para unirse a un duelo (para Telegram)
-app.post('/api/telegram/join-duel', async (req, res) => {
-  try {
-    const { userId, userName, userUsername } = req.body;
-    
-    if (!activeDuel || activeDuel.status !== 'waiting') {
-      return res.status(400).json({ error: 'No hay duelos disponibles' });
-    }
-    
-    if (activeDuel.playerA.telegramId === userId) {
-      return res.status(400).json({ error: 'No puedes unirte a tu propio duelo' });
-    }
-    
-    const user = { 
-      telegramId: userId, 
-      first_name: userName, 
-      username: userUsername 
-    };
-    
-    activeDuel.playerB = user;
-    activeDuel.status = 'countdown';
-    activeDuel.countdownStart = new Date();
-    activeDuel.countdownEnd = new Date(Date.now() + 15000);
-    
-    broadcastDuelUpdate(activeDuel);
-    res.json({ success: true, duel: activeDuel });
-    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -177,8 +197,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Ruta principal
+// Ruta principal - Usa tu index.html existente
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Nueva ruta para el mini app
+app.get('/mini-app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -195,11 +220,13 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
 
 bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   try {
+    // Si ya hay un duelo activo, no permitir crear otro
     if (activeDuel && activeDuel.status !== 'completed') {
       return bot.sendMessage(msg.chat.id, 
-        '❌ Ya hay un duelo en progreso. Espera a que termine.'
+        '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.'
       );
     }
+    
     await handlePvpCommand(bot, msg, match, broadcastDuelUpdate);
   } catch (error) {
     console.error('Error en /pvp:', error);
@@ -207,17 +234,22 @@ bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   }
 });
 
-bot.onText(/\/points$/, (msg) => handlePointsCommand(bot, msg));
+bot.onText(/\/points$/, (msg) => {
+  handlePointsCommand(bot, msg);
+});
 
 bot.onText(/\/leaderboard$/, async (msg) => {
   try {
-    const User = require('./models/user');
+    const User = require('./models/User');
     const leaderboard = await User.getLeaderboard(10);
+    
     let message = '🏆 *Tabla de Clasificación* 🏆\n\n';
+    
     leaderboard.forEach((user, index) => {
       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🔸';
       message += `${medal} ${index + 1}. ${user.first_name || 'Usuario'} - ${user.points} puntos\n`;
     });
+    
     bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error('Error en /leaderboard:', error);
@@ -225,13 +257,24 @@ bot.onText(/\/leaderboard$/, async (msg) => {
   }
 });
 
+// Manejar callbacks de botones
 bot.on('callback_query', async (callbackQuery) => {
   const data = callbackQuery.data;
+  
   if (data.startsWith('join_duel:')) {
-    await handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate);
+    try {
+      await handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate);
+    } catch (error) {
+      console.error('Error en callback join_duel:', error);
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: '❌ Error al unirse al duelo',
+        show_alert: true
+      });
+    }
   }
 });
 
+// Manejar errores
 bot.on('error', (error) => {
   console.error('❌ Error del bot de Telegram:', error);
 });
@@ -240,5 +283,18 @@ bot.on('error', (error) => {
 server.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log(`🤖 Bot de Telegram iniciado`);
-  console.log(`🌐 Web URL: ${process.env.WEB_URL || 'No configurada'}`);
+  console.log(`🌐 SPA disponible en: http://localhost:${PORT}`);
+  console.log(`📱 Mini App disponible en: http://localhost:${PORT}/mini-app`);
+  
+  // Cargar duelo activo desde archivo al iniciar
+  try {
+    const fs = require('fs');
+    if (fs.existsSync('current-duel.json')) {
+      const duelData = JSON.parse(fs.readFileSync('current-duel.json', 'utf8'));
+      activeDuel = duelData;
+      console.log('✅ Duelo activo cargado desde archivo');
+    }
+  } catch (error) {
+    console.log('ℹ️ No se encontró duelo activo para cargar');
+  }
 });
