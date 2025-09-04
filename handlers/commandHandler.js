@@ -6,7 +6,8 @@ async function handleStartCommand(bot, msg) {
   try {
     const user = await User.findOrCreate(msg.from);
     
-    const webAppUrl = `${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/mini-app`;
+    // Usar la URL de la aplicación en Render
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
     
     const welcomeMessage = `
 🎮 *Bienvenido a CoinFlip Duel* 🎮
@@ -84,7 +85,8 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
 
     // ✅ SOLUCIÓN: Enviar solicitud a la API para crear el duelo en el servidor web
     try {
-      const response = await fetch(`${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/api/create-duel`, {
+      const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
+      const response = await fetch(`${webAppUrl}/api/create-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -105,7 +107,7 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
     }
 
     // ✅ SOLUCIÓN: Usar botones con web_app
-    const webAppUrl = `${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/mini-app?duelId=${duel._id.toString()}`;
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
     
     const replyMarkup = {
       inline_keyboard: [
@@ -115,7 +117,7 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
         }],
         [{
           text: '🎮 Ver en Mini App',
-          web_app: { url: webAppUrl }
+          web_app: { url: `${webAppUrl}/mini-app?duelId=${duel._id.toString()}` }
         }]
       ]
     };
@@ -200,7 +202,8 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     
     // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
     try {
-      const response = await fetch(`${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/api/join-duel`, {
+      const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
+      const response = await fetch(`${webAppUrl}/api/join-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -220,13 +223,13 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
     }
     
     // ✅ SOLUCIÓN: Botones con web_app
-    const webAppUrl = `${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/mini-app?duelId=${duelId}`;
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
     
     const replyMarkup = {
       inline_keyboard: [
         [{
           text: '🎮 Ver Duelo en Mini App',
-          web_app: { url: webAppUrl }
+          web_app: { url: `${webAppUrl}/mini-app?duelId=${duelId}` }
         }]
       ]
     };
@@ -303,7 +306,8 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     
     // ✅ SOLUCIÓN: Enviar solicitud a la API para unirse al duelo en el servidor web
     try {
-      const response = await fetch(`${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/api/join-duel`, {
+      const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
+      const response = await fetch(`${webAppUrl}/api/join-duel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -328,13 +332,13 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
     }
     
     // ✅ SOLUCIÓN: Botones con web_app
-    const webAppUrl = `${process.env.WEB_APP_URL || `http://localhost:${process.env.PORT || 3000}`}/mini-app?duelId=${duelId}`;
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_URL || `localhost:${process.env.PORT || 3000}`}`;
     
     const replyMarkup = {
       inline_keyboard: [
         [{
           text: '🎮 Ver Duelo en Mini App',
-          web_app: { url: webAppUrl }
+          web_app: { url: `${webAppUrl}/mini-app?duelId=${duelId}` }
         }]
       ]
     };
