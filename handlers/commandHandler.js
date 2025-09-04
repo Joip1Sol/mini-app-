@@ -6,7 +6,7 @@ async function handleStartCommand(bot, msg) {
   try {
     const user = await User.findOrCreate(msg.from);
     
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+    const webAppUrl = process.env.WEB_APP_URL;
     
     const welcomeMessage = `
 🎮 *Bienvenido a CoinFlip Duel* 🎮
@@ -302,8 +302,8 @@ async function completeDuel(bot, duelId) {
     
     if (!duel || duel.status !== 'countdown') return;
 
-    // Obtener resultado del servidor
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+    // Obtener resultado del servidor para consistencia
+    const webAppUrl = process.env.WEB_APP_URL;
     const response = await fetch(`${webAppUrl}/api/duel-result/${duelId}`);
     let resultData;
     
@@ -314,7 +314,12 @@ async function completeDuel(bot, duelId) {
       }
     }
     
-    // Fallback si no hay resultado del servidor
+    // Si no hay resultado del servidor, usar el precalculado
+    if (!resultData && global.duelResults && global.duelResults.has(duelId)) {
+      resultData = global.duelResults.get(duelId);
+    }
+    
+    // Fallback si no hay resultado disponible
     if (!resultData) {
       const result = Math.random() > 0.5 ? 0 : 1;
       const winner = result === 0 ? duel.playerA : duel.playerB;
@@ -356,11 +361,7 @@ async function completeDuel(bot, duelId) {
       reply_markup: { inline_keyboard: [] }
     });
 
-    // Guardar resultado
-    if (typeof global.duelResults !== 'undefined') {
-      global.duelResults.set(duelId, resultData);
-    }
-
+    // Limpiar el duelo activo después de completarse
     if (typeof global.clearActiveDuel === 'function') {
       setTimeout(() => global.clearActiveDuel(), 5000);
     }

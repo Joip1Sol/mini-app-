@@ -63,6 +63,7 @@ connectDB().then(() => {
 // Función para limpiar el duelo activo
 function clearActiveDuel() {
   activeDuel = null;
+  duelResults.clear();
   
   if (fs.existsSync('current-duel.json')) {
     try {
@@ -81,10 +82,11 @@ function clearActiveDuel() {
 function determineDuelResult(duel) {
   if (!duel) return null;
   
-  // Crear semilla determinística basada en el ID
+  // Crear semilla determinística basada en el ID y timestamp
+  const seedStr = duel._id + duel.createdAt.getTime();
   let seed = 0;
-  for (let i = 0; i < duel._id.length; i++) {
-    seed = (seed + duel._id.charCodeAt(i)) % 1000;
+  for (let i = 0; i < seedStr.length; i++) {
+    seed = (seed + seedStr.charCodeAt(i)) % 1000;
   }
   
   // Resultado basado en la semilla (0 = Cara/Jugador A, 1 = Cruz/Jugador B)
@@ -116,6 +118,18 @@ function broadcastDuelUpdate(duel) {
     if (duel.status === 'countdown' && !duelResults.has(duel._id)) {
       const result = determineDuelResult(duel);
       duelResults.set(duel._id, result);
+      
+      // Programar el envío del resultado a todos los clientes
+      setTimeout(() => {
+        if (activeDuel && activeDuel._id === duel._id) {
+          io.emit('duel-result', { 
+            ...result, 
+            duelId: duel._id,
+            broadcastTime: new Date().getTime() 
+          });
+          console.log(`📤 Resultado enviado a todos los clientes: ${result.resultText}`);
+        }
+      }, 10000); // 10 segundos (mismo tiempo que el countdown)
     }
   } else {
     clearActiveDuel();
@@ -128,8 +142,15 @@ function broadcastDuelUpdate(duel) {
 io.on('connection', (socket) => {
   console.log('🔗 Cliente conectado a WebSocket');
   
+  // Enviar estado actual inmediatamente
   if (activeDuel) {
     socket.emit('duel-update', activeDuel);
+    
+    // Si hay un resultado precalculado, enviarlo también
+    const result = duelResults.get(activeDuel._id);
+    if (result) {
+      socket.emit('duel-result', { ...result, duelId: activeDuel._id });
+    }
   }
   
   socket.on('request-duel-result', (duelId) => {
@@ -476,3 +497,4 @@ setInterval(() => {
 // Exportar funciones para uso global
 global.clearActiveDuel = clearActiveDuel;
 global.duelResults = duelResults;
+global.io = io;
