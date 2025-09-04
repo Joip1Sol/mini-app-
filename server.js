@@ -1,4 +1,4 @@
-vrequire('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const { connectDB } = require('./config/database');
@@ -87,7 +87,7 @@ function determineDuelResult(duel) {
     seed = (seed + duel._id.charCodeAt(i)) % 1000;
   }
   
-  // Resultado basado en la semilla (0 = Cara, 1 = Cruz)
+  // Resultado basado en la semilla (0 = Cara/Jugador A, 1 = Cruz/Jugador B)
   const result = seed % 2;
   const winner = result === 0 ? duel.playerA : duel.playerB;
   const loser = result === 0 ? duel.playerB : duel.playerA;
@@ -135,7 +135,7 @@ io.on('connection', (socket) => {
   socket.on('request-duel-result', (duelId) => {
     const result = duelResults.get(duelId);
     if (result) {
-      socket.emit('duel-result', result);
+      socket.emit('duel-result', { ...result, duelId });
     }
   });
   
@@ -186,7 +186,7 @@ app.get('/api/duel-result/:duelId', async (req, res) => {
     const result = duelResults.get(duelId);
     
     if (result) {
-      res.json({ success: true, result });
+      res.json({ success: true, result: { ...result, duelId } });
     } else {
       res.json({ success: false, error: 'Resultado no disponible' });
     }
@@ -471,4 +471,8 @@ setInterval(() => {
     console.log('🕒 Limpiando duelo expirado automáticamente');
     clearActiveDuel();
   }
-}, 8000);
+}, 5000);
+
+// Exportar funciones para uso global
+global.clearActiveDuel = clearActiveDuel;
+global.duelResults = duelResults;
