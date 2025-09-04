@@ -1,4 +1,4 @@
-require('dotenv').config();
+vrequire('dotenv').config();
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const { connectDB } = require('./config/database');
@@ -14,6 +14,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
@@ -40,6 +41,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
 // Variables globales para el duelo activo
 let activeDuel = null;
 let duelTimeout = null;
+let duelResults = new Map();
 
 // Middleware
 app.use(express.json());
@@ -62,7 +64,6 @@ connectDB().then(() => {
 function clearActiveDuel() {
   activeDuel = null;
   
-  // Eliminar el archivo de persistencia si existe
   if (fs.existsSync('current-duel.json')) {
     try {
       fs.unlinkSync('current-duel.json');
@@ -72,21 +73,49 @@ function clearActiveDuel() {
     }
   }
   
-  // Notificar a todos los clientes que el duelo ha terminado
   io.emit('duel-update', null);
   console.log('🔄 Estado del duelo reiniciado');
+}
+
+// Función para determinar resultado del duelo
+function determineDuelResult(duel) {
+  if (!duel) return null;
+  
+  // Crear semilla determinística basada en el ID
+  let seed = 0;
+  for (let i = 0; i < duel._id.length; i++) {
+    seed = (seed + duel._id.charCodeAt(i)) % 1000;
+  }
+  
+  // Resultado basado en la semilla (0 = Cara, 1 = Cruz)
+  const result = seed % 2;
+  const winner = result === 0 ? duel.playerA : duel.playerB;
+  const loser = result === 0 ? duel.playerB : duel.playerA;
+  
+  return {
+    result,
+    winner,
+    loser,
+    resultText: result === 0 ? 'heads' : 'tails',
+    winnings: duel.betAmount * 2
+  };
 }
 
 // Función para actualizar todos los clientes
 function broadcastDuelUpdate(duel) {
   activeDuel = duel;
   
-  // Guardar en archivo para persistencia solo si hay un duelo activo
   if (duel) {
     try {
       fs.writeFileSync('current-duel.json', JSON.stringify(duel, null, 2));
     } catch (error) {
       console.error('❌ Error guardando duelo en archivo:', error);
+    }
+    
+    // Precalcular resultado para consistencia
+    if (duel.status === 'countdown' && !duelResults.has(duel._id)) {
+      const result = determineDuelResult(duel);
+      duelResults.set(duel._id, result);
     }
   } else {
     clearActiveDuel();
@@ -99,12 +128,16 @@ function broadcastDuelUpdate(duel) {
 io.on('connection', (socket) => {
   console.log('🔗 Cliente conectado a WebSocket');
   
-  // Enviar el duelo activo inmediatamente al conectar
   if (activeDuel) {
     socket.emit('duel-update', activeDuel);
-  } else {
-    socket.emit('duel-update', null);
   }
+  
+  socket.on('request-duel-result', (duelId) => {
+    const result = duelResults.get(duelId);
+    if (result) {
+      socket.emit('duel-result', result);
+    }
+  });
   
   socket.on('disconnect', () => {
     console.log('❌ Cliente desconectado');
@@ -114,26 +147,20 @@ io.on('connection', (socket) => {
 // API para obtener el duelo activo
 app.get('/api/active-duel', async (req, res) => {
   try {
-    // Si hay un duelo activo en memoria, devolverlo
     if (activeDuel) {
       return res.json(activeDuel);
     }
     
-    // Si no hay en memoria, verificar si hay un archivo de duelo
     try {
       if (fs.existsSync('current-duel.json')) {
         const duelData = JSON.parse(fs.readFileSync('current-duel.json', 'utf8'));
         
-        // Verificar si el duelo ya expiró
         if (duelData.expiresAt && new Date(duelData.expiresAt) < new Date()) {
-          console.log('🕒 Duelo expirado encontrado, limpiando...');
           clearActiveDuel();
           return res.json(null);
         }
         
-        // Verificar si el duelo ya está completado
         if (duelData.status === 'completed') {
-          console.log('✅ Duelo completado encontrado, limpiando...');
           clearActiveDuel();
           return res.json(null);
         }
@@ -146,10 +173,25 @@ app.get('/api/active-duel', async (req, res) => {
       clearActiveDuel();
     }
     
-    // Si no hay duelo activo
     res.json(null);
   } catch (error) {
     res.status(500).json({ error: 'Error obteniendo duelo activo' });
+  }
+});
+
+// API para obtener resultado del duelo
+app.get('/api/duel-result/:duelId', async (req, res) => {
+  try {
+    const duelId = req.params.duelId;
+    const result = duelResults.get(duelId);
+    
+    if (result) {
+      res.json({ success: true, result });
+    } else {
+      res.json({ success: false, error: 'Resultado no disponible' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -188,7 +230,7 @@ app.post('/api/join-duel', async (req, res) => {
     
     activeDuel.playerB = user;
     activeDuel.status = 'countdown';
-    activeDuel.countdownEnd = new Date(Date.now() + 15000);
+    activeDuel.countdownEnd = new Date(Date.now() + 10000);
     
     broadcastDuelUpdate(activeDuel);
     
@@ -202,9 +244,7 @@ app.post('/api/join-duel', async (req, res) => {
 app.post('/api/create-duel', async (req, res) => {
   try {
     if (activeDuel && activeDuel.status !== 'completed') {
-      // Limpiar duelos antiguos que puedan estar atascados
       if (activeDuel.expiresAt && new Date(activeDuel.expiresAt) < new Date()) {
-        console.log('🕒 Duelo expirado detectado, limpiando...');
         clearActiveDuel();
       } else {
         return res.status(400).json({ error: 'Ya hay un duelo en progreso' });
@@ -220,7 +260,7 @@ app.post('/api/create-duel', async (req, res) => {
     };
     
     activeDuel = {
-      _id: 'duel_' + Date.now(),
+      _id: `duel_${uuidv4()}`,
       playerA: user,
       playerB: null,
       betAmount: betAmount || 10,
@@ -254,17 +294,16 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Ruta principal
+// Rutas
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Ruta para el mini app
 app.get('/mini-app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Manejar el comando /start
+// Comandos de Telegram
 bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   if (msg.chat.type !== 'private') {
     const botUsername = process.env.BOT_USERNAME || 'tu_bot';
@@ -283,7 +322,6 @@ bot.onText(/\/start(?:\s+(.+))?/, (msg, match) => {
   }
 });
 
-// Comando /pvp - CORREGIDO para reenviar mensaje de duelo activo
 bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   try {
     if (msg.chat.type === 'private') {
@@ -293,23 +331,19 @@ bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
     }
     
     if (activeDuel && activeDuel.status !== 'completed') {
-      // Verificar si el duelo actual ya expiró
       if (activeDuel.expiresAt && new Date(activeDuel.expiresAt) < new Date()) {
-        console.log('🕒 Duelo expirado detectado, limpiando...');
         clearActiveDuel();
       } else {
-        // Reenviar el mensaje del duelo activo en lugar de solo el mensaje de error
-        try {
-          const replyMarkup = {
-            inline_keyboard: [
-              [{
-                text: '✅ Unirse al Duelo',
-                callback_data: `join_duel:${activeDuel._id}`
-              }]
-            ]
-          };
-          
-          await bot.sendMessage(msg.chat.id, `
+        const replyMarkup = {
+          inline_keyboard: [
+            [{
+              text: '✅ Unirse al Duelo',
+              callback_data: `join_duel:${activeDuel._id}`
+            }]
+          ]
+        };
+        
+        await bot.sendMessage(msg.chat.id, `
 ❌ *Ya hay un duelo en progreso* 🎮
 
 👤 *Jugador A:* ${activeDuel.playerA.first_name || 'Jugador A'}${activeDuel.playerA.username ? ` (@${activeDuel.playerA.username})` : ''}
@@ -317,18 +351,11 @@ bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
 ⏰ *Expira en:* ${Math.round((new Date(activeDuel.expiresAt) - new Date()) / 60000)} minutos
 
 ¡Presiona "Unirse al Duelo" para unirte al duelo existente!
-          `.trim(), {
-            parse_mode: 'Markdown',
-            reply_markup: replyMarkup,
-            reply_to_message_id: msg.message_id
-          });
-        } catch (error) {
-          console.error('Error enviando mensaje de duelo activo:', error);
-          await bot.sendMessage(msg.chat.id, 
-            '❌ Ya hay un duelo en progreso. Espera a que termine para crear uno nuevo.',
-            { reply_to_message_id: msg.message_id }
-          );
-        }
+        `.trim(), {
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup,
+          reply_to_message_id: msg.message_id
+        });
         return;
       }
     }
@@ -342,7 +369,6 @@ bot.onText(/\/pvp(?:\s+(\d+))?$/, async (msg, match) => {
   }
 });
 
-// Comando /points
 bot.onText(/\/points$/, (msg) => {
   if (msg.chat.type !== 'private') {
     const botUsername = process.env.BOT_USERNAME || 'tu_bot';
@@ -354,7 +380,6 @@ bot.onText(/\/points$/, (msg) => {
   handlePointsCommand(bot, msg);
 });
 
-// Comando /leaderboard - CORREGIDO
 bot.onText(/\/leaderboard$/, async (msg) => {
   try {
     const User = require('./models/User');
@@ -364,10 +389,7 @@ bot.onText(/\/leaderboard$/, async (msg) => {
     
     leaderboard.forEach((user, index) => {
       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🔸';
-      
-      // Usar first_name, username o "Jugador" como fallback
       const userName = user.first_name || user.username || 'Jugador';
-      
       message += `${medal} ${index + 1}. ${userName} - ${user.points} puntos\n`;
     });
     
@@ -383,10 +405,8 @@ bot.onText(/\/leaderboard$/, async (msg) => {
   }
 });
 
-// Comando /clear para administradores (debug)
 bot.onText(/\/clear$/, (msg) => {
-  // Verificar si el usuario es administrador o el propietario del bot
-  const allowedUsers = [8032663431, 7617852266]; // Reemplaza con los IDs de usuarios permitidos
+  const allowedUsers = [8032663431, 7617852266];
   if (allowedUsers.includes(msg.from.id)) {
     clearActiveDuel();
     bot.sendMessage(msg.chat.id, '✅ Duelo activo limpiado correctamente',
@@ -426,21 +446,16 @@ server.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en puerto ${PORT}`);
   console.log(`🤖 Bot de Telegram iniciado`);
   
-  // Limpiar cualquier duelo activo al iniciar el servidor
   clearActiveDuel();
   
-  // Verificar si hay un duelo persistido y limpiarlo si es necesario
   try {
     if (fs.existsSync('current-duel.json')) {
       const duelData = JSON.parse(fs.readFileSync('current-duel.json', 'utf8'));
       
-      // Verificar si el duelo ya expiró o está completado
       if ((duelData.expiresAt && new Date(duelData.expiresAt) < new Date()) || 
           duelData.status === 'completed') {
-        console.log('🕒 Duelo persistido expirado/completado, limpiando...');
         clearActiveDuel();
       } else {
-        console.log('✅ Duelo persistido cargado');
         activeDuel = duelData;
       }
     }
@@ -450,10 +465,10 @@ server.listen(PORT, () => {
   }
 });
 
-// Función para limpiar duelos expirados periódicamente
+// Limpiar duelos expirados periódicamente
 setInterval(() => {
   if (activeDuel && activeDuel.expiresAt && new Date(activeDuel.expiresAt) < new Date()) {
     console.log('🕒 Limpiando duelo expirado automáticamente');
     clearActiveDuel();
   }
-}, 60000); // Verificar cada minuto
+}, 8000);

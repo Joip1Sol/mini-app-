@@ -1,12 +1,11 @@
 const User = require('../models/User');
 const Duel = require('../models/Duel');
 
-// Handler para el comando /start - CORREGIDO
+// Handler para el comando /start
 async function handleStartCommand(bot, msg) {
   try {
     const user = await User.findOrCreate(msg.from);
     
-    // URL de la mini app - CORREGIDO para Render
     const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
     
     const welcomeMessage = `
@@ -24,7 +23,6 @@ async function handleStartCommand(bot, msg) {
 💰 Puntos: ${user.points}
     `.trim();
 
-    // SOLUCIÓN: Botones corregidos sin web_app que causa BUTTON_TYPE_INVALID
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -63,13 +61,12 @@ async function handlePointsCommand(bot, msg) {
   }
 }
 
-// Handler para el comando /pvp - CORREGIDO
+// Handler para el comando /pvp
 async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
   try {
     const user = await User.findOrCreate(msg.from);
     const betAmount = match[1] ? parseInt(match[1]) : 10;
 
-    // Validaciones
     if (betAmount < 1) {
       return await bot.sendMessage(msg.chat.id, '❌ La apuesta debe ser al menos 1 punto',
         { reply_to_message_id: msg.message_id }
@@ -83,7 +80,6 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       );
     }
 
-    // Crear duelo en la base de datos
     const duel = await Duel.createDuel({
       playerA: user,
       betAmount: betAmount,
@@ -91,7 +87,6 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       messageId: null
     });
 
-    // SOLUCIÓN: Botones corregidos sin web_app
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -117,16 +112,13 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
       reply_markup: replyMarkup
     });
 
-    // Actualizar el duelo con el messageId
     await Duel.updateMessageId(duel._id.toString(), message.message_id);
 
-    // Notificar a todos los clientes conectados
     if (broadcastDuelUpdate) {
       const updatedDuel = await Duel.getDuelById(duel._id.toString());
       broadcastDuelUpdate(updatedDuel);
     }
 
-    // Configurar expiración después de 2 minutos
     setTimeout(async () => {
       const currentDuel = await Duel.getDuelById(duel._id.toString());
       if (currentDuel && currentDuel.status === 'waiting') {
@@ -138,7 +130,6 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
           reply_markup: { inline_keyboard: [] }
         });
 
-        // Notificar a todos los clientes conectados
         if (broadcastDuelUpdate) {
           broadcastDuelUpdate(null);
         }
@@ -153,7 +144,7 @@ async function handlePvpCommand(bot, msg, match, broadcastDuelUpdate) {
   }
 }
 
-// Handler para deep links (start con parámetros) - CORREGIDO
+// Handler para deep links (start con parámetros)
 async function handleDeepLinkJoin(bot, msg, duelId) {
   try {
     const user = await User.findOrCreate(msg.from);
@@ -177,11 +168,8 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
       );
     }
 
-    // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
-    // Botones con enlace a la mini app
-    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -208,7 +196,6 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
 
     await bot.sendMessage(msg.chat.id, '✅ Te has unido al duelo exitosamente!');
 
-    // Iniciar countdown de 10 segundos
     setTimeout(async () => {
       await completeDuel(bot, duelId);
     }, 10000);
@@ -219,7 +206,7 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
   }
 }
 
-// Handler para callback de unirse al duelo - CORREGIDO
+// Handler para callback de unirse al duelo
 async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   try {
     const user = await User.findOrCreate(callbackQuery.from);
@@ -256,14 +243,12 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       });
     }
 
-    // Unirse al duelo
     const updatedDuel = await Duel.joinDuel(duelId, user);
     
     if (broadcastDuelUpdate) {
       broadcastDuelUpdate(updatedDuel);
     }
     
-    // Botones con enlace a la mini app
     const replyMarkup = {
       inline_keyboard: [
         [{
@@ -297,7 +282,6 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       text: '✅ Te has unido al duelo!'
     });
 
-    // Iniciar countdown de 10 segundos
     setTimeout(async () => {
       await completeDuel(bot, duelId);
     }, 10000);
@@ -311,29 +295,49 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   }
 }
 
-// Completar duelo - FUNCIÓN CORREGIDA
+// Completar duelo
 async function completeDuel(bot, duelId) {
   try {
     const duel = await Duel.getDuelById(duelId);
     
     if (!duel || duel.status !== 'countdown') return;
 
-    // Realizar el coinflip
-    const result = Math.random() > 0.5 ? 0 : 1;
-    const winner = result === 0 ? duel.playerA : duel.playerB;
-    const loser = result === 0 ? duel.playerB : duel.playerA;
-    const resultText = result === 0 ? 'heads' : 'tails';
+    // Obtener resultado del servidor
+    const webAppUrl = process.env.WEB_APP_URL || `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+    const response = await fetch(`${webAppUrl}/api/duel-result/${duelId}`);
+    let resultData;
+    
+    if (response.ok) {
+      const resultResponse = await response.json();
+      if (resultResponse.success) {
+        resultData = resultResponse.result;
+      }
+    }
+    
+    // Fallback si no hay resultado del servidor
+    if (!resultData) {
+      const result = Math.random() > 0.5 ? 0 : 1;
+      const winner = result === 0 ? duel.playerA : duel.playerB;
+      const loser = result === 0 ? duel.playerB : duel.playerA;
+      
+      resultData = {
+        result,
+        winner,
+        loser,
+        resultText: result === 0 ? 'heads' : 'tails',
+        winnings: duel.betAmount * 2
+      };
+    }
 
     // Actualizar puntos
-    const winnings = duel.betAmount * 2;
-    await User.updatePoints(winner.telegramId, winnings);
-    await User.updatePoints(loser.telegramId, -duel.betAmount);
-    await Duel.completeDuel(duelId, winner);
+    await User.updatePoints(resultData.winner.telegramId, resultData.winnings);
+    await User.updatePoints(resultData.loser.telegramId, -duel.betAmount);
+    await Duel.completeDuel(duelId, resultData.winner);
 
-    const winnerName = winner.first_name || 'Ganador';
-    const loserName = loser.first_name || 'Perdedor';
-    const winnerUsername = winner.username ? ` (@${winner.username})` : '';
-    const loserUsername = loser.username ? ` (@${loser.username})` : '';
+    const winnerName = resultData.winner.first_name || 'Ganador';
+    const loserName = resultData.loser.first_name || 'Perdedor';
+    const winnerUsername = resultData.winner.username ? ` (@${resultData.winner.username})` : '';
+    const loserUsername = resultData.loser.username ? ` (@${resultData.loser.username})` : '';
 
     // Enviar resultado
     await bot.editMessageText(`
@@ -341,8 +345,8 @@ async function completeDuel(bot, duelId) {
 
 👑 *Ganador:* ${winnerName}${winnerUsername}
 💔 *Perdedor:* ${loserName}${loserUsername}
-💰 *Premio:* ${winnings} puntos
-🎯 *Resultado:* ${resultText === 'heads' ? '🟡 Cara' : '⚫ Cruz'}
+💰 *Premio:* ${resultData.winnings} puntos
+🎯 *Resultado:* ${resultData.resultText === 'heads' ? '🟡 Cara' : '⚫ Cruz'}
 
 ¡Felicidades ${winnerName}! 🏆
     `.trim(), {
@@ -352,16 +356,18 @@ async function completeDuel(bot, duelId) {
       reply_markup: { inline_keyboard: [] }
     });
 
-    // IMPORTANTE: Limpiar el duelo activo después de completarse
-    // Esto notificará a todos los clientes que el duelo ha terminado
+    // Guardar resultado
+    if (typeof global.duelResults !== 'undefined') {
+      global.duelResults.set(duelId, resultData);
+    }
+
     if (typeof global.clearActiveDuel === 'function') {
-      global.clearActiveDuel();
+      setTimeout(() => global.clearActiveDuel(), 5000);
     }
 
   } catch (error) {
     console.error('Error completando duelo:', error);
     
-    // Asegurarse de limpiar el duelo incluso si hay error
     if (typeof global.clearActiveDuel === 'function') {
       global.clearActiveDuel();
     }
