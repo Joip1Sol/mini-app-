@@ -196,9 +196,10 @@ async function handleDeepLinkJoin(bot, msg, duelId) {
 
     await bot.sendMessage(msg.chat.id, '✅ Te has unido al duelo exitosamente!');
 
-    setTimeout(async () => {
-      await completeDuel(bot, duelId);
-    }, 10000);
+    // Notificar al servidor para que inicie el countdown
+    if (typeof global.io !== 'undefined') {
+      global.io.emit('duel-joined', { duelId });
+    }
 
   } catch (error) {
     console.error('Error en deep link join:', error);
@@ -282,9 +283,10 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
       text: '✅ Te has unido al duelo!'
     });
 
-    setTimeout(async () => {
-      await completeDuel(bot, duelId);
-    }, 10000);
+    // Notificar al servidor para que inicie el countdown
+    if (typeof global.io !== 'undefined') {
+      global.io.emit('duel-joined', { duelId });
+    }
 
   } catch (error) {
     console.error('Error uniéndose al duelo:', error);
@@ -295,91 +297,10 @@ async function handleJoinDuel(bot, callbackQuery, broadcastDuelUpdate) {
   }
 }
 
-// Completar duelo
-async function completeDuel(bot, duelId) {
-  try {
-    const duel = await Duel.getDuelById(duelId);
-    
-    if (!duel || duel.status !== 'countdown') return;
-
-    // Obtener resultado del servidor para consistencia
-    const webAppUrl = process.env.WEB_APP_URL;
-    const response = await fetch(`${webAppUrl}/api/duel-result/${duelId}`);
-    let resultData;
-    
-    if (response.ok) {
-      const resultResponse = await response.json();
-      if (resultResponse.success) {
-        resultData = resultResponse.result;
-      }
-    }
-    
-    // Si no hay resultado del servidor, usar el precalculado
-    if (!resultData && global.duelResults && global.duelResults.has(duelId)) {
-      resultData = global.duelResults.get(duelId);
-    }
-    
-    // Fallback si no hay resultado disponible
-    if (!resultData) {
-      const result = Math.random() > 0.5 ? 0 : 1;
-      const winner = result === 0 ? duel.playerA : duel.playerB;
-      const loser = result === 0 ? duel.playerB : duel.playerA;
-      
-      resultData = {
-        result,
-        winner,
-        loser,
-        resultText: result === 0 ? 'heads' : 'tails',
-        winnings: duel.betAmount * 2
-      };
-    }
-
-    // Actualizar puntos
-    await User.updatePoints(resultData.winner.telegramId, resultData.winnings);
-    await User.updatePoints(resultData.loser.telegramId, -duel.betAmount);
-    await Duel.completeDuel(duelId, resultData.winner);
-
-    const winnerName = resultData.winner.first_name || 'Ganador';
-    const loserName = resultData.loser.first_name || 'Perdedor';
-    const winnerUsername = resultData.winner.username ? ` (@${resultData.winner.username})` : '';
-    const loserUsername = resultData.loser.username ? ` (@${resultData.loser.username})` : '';
-
-    // Enviar resultado
-    await bot.editMessageText(`
-🎉 *Duelo Completado* 🎉
-
-👑 *Ganador:* ${winnerName}${winnerUsername}
-💔 *Perdedor:* ${loserName}${loserUsername}
-💰 *Premio:* ${resultData.winnings} puntos
-🎯 *Resultado:* ${resultData.resultText === 'heads' ? '🟡 Cara' : '⚫ Cruz'}
-
-¡Felicidades ${winnerName}! 🏆
-    `.trim(), {
-      chat_id: duel.chatId,
-      message_id: duel.messageId,
-      parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [] }
-    });
-
-    // Limpiar el duelo activo después de completarse
-    if (typeof global.clearActiveDuel === 'function') {
-      setTimeout(() => global.clearActiveDuel(), 5000);
-    }
-
-  } catch (error) {
-    console.error('Error completando duelo:', error);
-    
-    if (typeof global.clearActiveDuel === 'function') {
-      global.clearActiveDuel();
-    }
-  }
-}
-
 module.exports = { 
   handleStartCommand, 
   handlePointsCommand, 
   handlePvpCommand, 
   handleJoinDuel, 
-  handleDeepLinkJoin,
-  completeDuel 
+  handleDeepLinkJoin
 };

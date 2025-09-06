@@ -7,8 +7,7 @@ const {
   handlePointsCommand, 
   handlePvpCommand, 
   handleJoinDuel,
-  handleDeepLinkJoin,
-  completeDuel
+  handleDeepLinkJoin
 } = require('./handlers/commandHandler');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -40,7 +39,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
 
 // Variables globales para el duelo activo
 let activeDuel = null;
-let duelTimeout = null;
+let duelTimers = new Map();
 let duelResults = new Map();
 
 // Middleware
@@ -64,6 +63,12 @@ connectDB().then(() => {
 function clearActiveDuel() {
   activeDuel = null;
   duelResults.clear();
+  
+  // Limpiar todos los timers
+  duelTimers.forEach((timer, duelId) => {
+    clearTimeout(timer);
+    duelTimers.delete(duelId);
+  });
   
   if (fs.existsSync('current-duel.json')) {
     try {
@@ -103,6 +108,64 @@ function determineDuelResult(duel) {
   };
 }
 
+// Función para completar el duelo desde el servidor
+async function completeDuelFromServer(duelId) {
+  try {
+    const Duel = require('./models/Duel');
+    const User = require('./models/User');
+    
+    const duel = await Duel.getDuelById(duelId);
+    if (!duel || duel.status !== 'countdown') return;
+
+    // Obtener resultado precalculado
+    const resultData = duelResults.get(duelId);
+    if (!resultData) return;
+
+    // Actualizar puntos en la base de datos
+    await User.updatePoints(resultData.winner.telegramId, resultData.winnings);
+    await User.updatePoints(resultData.loser.telegramId, -duel.betAmount);
+    await Duel.completeDuel(duelId, resultData.winner);
+
+    const winnerName = resultData.winner.first_name || 'Ganador';
+    const loserName = resultData.loser.first_name || 'Perdedor';
+    const winnerUsername = resultData.winner.username ? ` (@${resultData.winner.username})` : '';
+    const loserUsername = resultData.loser.username ? ` (@${resultData.loser.username})` : '';
+
+    // Enviar resultado a Telegram
+    await bot.editMessageText(`
+🎉 *Duelo Completado* 🎉
+
+👑 *Ganador:* ${winnerName}${winnerUsername}
+💔 *Perdedor:* ${loserName}${loserUsername}
+💰 *Premio:* ${resultData.winnings} puntos
+🎯 *Resultado:* ${resultData.resultText === 'heads' ? '🟡 Cara' : '⚫ Cruz'}
+
+¡Felicidades ${winnerName}! 🏆
+    `.trim(), {
+      chat_id: duel.chatId,
+      message_id: duel.messageId,
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [] }
+    });
+
+    // Enviar resultado a todos los clientes WebSocket
+    io.emit('duel-result', { 
+      ...resultData, 
+      duelId,
+      final: true 
+    });
+
+    // Programar limpieza
+    setTimeout(() => {
+      clearActiveDuel();
+    }, 5000);
+
+  } catch (error) {
+    console.error('Error completando duelo desde servidor:', error);
+    clearActiveDuel();
+  }
+}
+
 // Función para actualizar todos los clientes
 function broadcastDuelUpdate(duel) {
   activeDuel = duel;
@@ -119,17 +182,27 @@ function broadcastDuelUpdate(duel) {
       const result = determineDuelResult(duel);
       duelResults.set(duel._id, result);
       
-      // Programar el envío del resultado a todos los clientes
-      setTimeout(() => {
-        if (activeDuel && activeDuel._id === duel._id) {
-          io.emit('duel-result', { 
-            ...result, 
-            duelId: duel._id,
-            broadcastTime: new Date().getTime() 
+      // Programar el completado del duelo desde el servidor
+      const timer = setTimeout(() => {
+        completeDuelFromServer(duel._id);
+      }, 10000);
+      
+      duelTimers.set(duel._id, timer);
+      
+      // Iniciar countdown sincronizado para todos los clientes
+      let countdown = 10;
+      const countdownInterval = setInterval(() => {
+        if (countdown >= 0) {
+          io.emit('countdown-update', { 
+            duelId: duel._id, 
+            countdown,
+            serverTime: Date.now()
           });
-          console.log(`📤 Resultado enviado a todos los clientes: ${result.resultText}`);
+          countdown--;
+        } else {
+          clearInterval(countdownInterval);
         }
-      }, 10000); // 10 segundos (mismo tiempo que el countdown)
+      }, 1000);
     }
   } else {
     clearActiveDuel();
@@ -492,7 +565,7 @@ setInterval(() => {
     console.log('🕒 Limpiando duelo expirado automáticamente');
     clearActiveDuel();
   }
-}, 5000);
+}, 60000);
 
 // Exportar funciones para uso global
 global.clearActiveDuel = clearActiveDuel;

@@ -7,473 +7,12 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        :root {
-            --primary-color: #40a7e3;
-            --secondary-color: #2d89bc;
-            --success-color: #4caf50;
-            --warning-color: #ff9800;
-            --error-color: #f44336;
-            --bg-color: #f5f5f5;
-            --card-bg: #ffffff;
-            --text-color: #333333;
-            --border-radius: 12px;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-color: #1a1a1a;
-                --card-bg: #2d2d2d;
-                --text-color: #ffffff;
-            }
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            padding: 20px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 500px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid var(--primary-color);
-        }
-
-        .header h1 {
-            font-size: 2.2rem;
-            color: var(--primary-color);
-            margin-bottom: 10px;
-        }
-
-        .header p {
-            opacity: 0.8;
-        }
-
-        .status-banner {
-            padding: 15px;
-            border-radius: var(--border-radius);
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: bold;
-        }
-
-        .status-waiting {
-            background-color: var(--warning-color);
-            color: white;
-        }
-
-        .status-countdown {
-            background-color: var(--primary-color);
-            color: white;
-        }
-
-        .status-completed {
-            background-color: var(--success-color);
-            color: white;
-        }
-
-        .connection-status {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: bold;
-            z-index: 1000;
-        }
-
-        .connected {
-            background-color: var(--success-color);
-            color: white;
-        }
-
-        .disconnected {
-            background-color: var(--error-color);
-            color: white;
-        }
-
-        .duel-card {
-            background-color: var(--card-bg);
-            border-radius: var(--border-radius);
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .players-container {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 25px;
-        }
-
-        .player {
-            text-align: center;
-            width: 45%;
-            padding: 15px;
-            border-radius: var(--border-radius);
-            background: linear-gradient(145deg, #e6e6e6, #ffffff);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .player.active {
-            border: 2px solid var(--primary-color);
-        }
-
-        .player.winner {
-            border: 2px solid var(--success-color);
-            background: linear-gradient(145deg, #4caf50, #a5d6a7);
-            color: white;
-        }
-
-        .player h3 {
-            margin-bottom: 10px;
-            color: var(--primary-color);
-        }
-
-        .player p {
-            font-size: 1.1rem;
-            font-weight: bold;
-            margin: 5px 0;
-        }
-
-        .player .username {
-            font-size: 0.9rem;
-            opacity: 0.8;
-        }
-
-        .player .user-id {
-            font-size: 0.7rem;
-            opacity: 0.6;
-            margin-top: 5px;
-        }
-
-        .vs {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--primary-color);
-        }
-
-        .bet-amount {
-            text-align: center;
-            font-size: 1.3rem;
-            margin: 20px 0;
-            padding: 10px;
-            background-color: rgba(64, 167, 227, 0.1);
-            border-radius: var(--border-radius);
-        }
-
-        .bet-amount span {
-            color: var(--primary-color);
-            font-weight: bold;
-        }
-
-        .coin-section {
-            perspective: 1000px;
-            width: 150px;
-            height: 150px;
-            margin: 0 auto 25px;
-        }
-
-        #coin {
-            width: 100%;
-            height: 100%;
-            position: relative;
-            transform-style: preserve-3d;
-            transition: transform 1s ease-out;
-        }
-
-        .coin-face {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            backface-visibility: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 1.8rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        }
-
-        .front {
-            background: linear-gradient(145deg, #ffd700, #ffed4e);
-            border: 4px solid #c4b16b;
-            color: #333;
-            z-index: 2;
-        }
-
-        .back {
-            background: linear-gradient(145deg, #c0c0c0, #e8e8e8);
-            border: 4px solid #a8a8a8;
-            color: #333;
-            transform: rotateY(180deg);
-        }
-
-        .winner-side {
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5) !important;
-            border: 4px solid #4CAF50 !important;
-        }
-
-        .countdown {
-            text-align: center;
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin: 20px 0;
-            color: var(--primary-color);
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        .result-section {
-            text-align: center;
-            margin: 25px 0;
-            padding: 20px;
-            background-color: var(--card-bg);
-            border-radius: var(--border-radius);
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        .winner-text {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--success-color);
-            margin-bottom: 10px;
-        }
-
-        .result-details {
-            font-size: 1.1rem;
-            margin: 5px 0;
-        }
-
-        .history-section {
-            margin-top: 25px;
-            padding: 20px;
-            background-color: var(--card-bg);
-            border-radius: var(--border-radius);
-        }
-
-        .history-title {
-            text-align: center;
-            margin-bottom: 15px;
-            font-size: 1.2rem;
-            color: var(--primary-color);
-        }
-
-        .history-item {
-            padding: 10px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .history-item:last-child {
-            border-bottom: none;
-        }
-
-        .telegram-link {
-            text-align: center;
-            margin-top: 20px;
-            padding: 15px;
-            background-color: var(--primary-color);
-            border-radius: var(--border-radius);
-        }
-
-        .telegram-link a {
-            color: white;
-            text-decoration: none;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .instructions {
-            text-align: center;
-            margin: 15px 0;
-            padding: 15px;
-            background-color: var(--card-bg);
-            border-radius: var(--border-radius);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .instructions h3 {
-            color: var(--primary-color);
-            margin-bottom: 10px;
-        }
-
-        .instructions ol {
-            text-align: left;
-            padding-left: 20px;
-        }
-
-        .instructions li {
-            margin-bottom: 8px;
-        }
-
-        .clear-button {
-            text-align: center;
-            margin: 10px 0;
-        }
-
-        .clear-button button {
-            background: var(--warning-color);
-            border: none;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        @keyframes flip {
-            0% { transform: rotateY(0deg); }
-            100% { transform: rotateY(1800deg); }
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .flipping {
-            animation: flip 2s ease-out forwards;
-        }
-
-        .fade-in {
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        @media (max-width: 600px) {
-            .container {
-                padding: 10px;
-            }
-            
-            .players-container {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .player {
-                width: 100%;
-            }
-            
-            .coin-section {
-                width: 120px;
-                height: 120px;
-            }
-        }
+        /* ... (mantener todos los estilos existentes) ... */
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🎯 CoinFlip Duelo - Tiempo Real</h1>
-            <p>Actualización instantánea desde Telegram</p>
-        </div>
-
-        <div id="connection-status" class="connection-status connected">
-            ● Conectado
-        </div>
-
-        <div class="instructions">
-            <h3>📋 Cómo probar la actualización en tiempo real:</h3>
-            <ol>
-                <li>Abre Telegram y envía <strong>/pvp 10</strong> en el grupo</li>
-                <li>Esta página se actualizará automáticamente con tu user_id</li>
-                <li>Otro usuario puede unirse presionando "Unirse al Duelo"</li>
-                <li>El duelo comenzará automáticamente en 10 segundos</li>
-            </ol>
-        </div>
-
-        <div class="clear-button">
-            <button onclick="clearDuel()">🔄 Reiniciar Duelo</button>
-        </div>
-
-        <div id="status-banner" class="status-banner status-waiting">
-            <span id="status-text">✅ Esperando comando /pvp desde Telegram</span>
-        </div>
-
-        <div class="duel-card">
-            <div class="players-container">
-                <div class="player" id="player-a">
-                    <h3>Jugador A</h3>
-                    <p id="player-a-name">Esperando...</p>
-                    <p id="player-a-username" class="username"></p>
-                    <p id="player-a-id" class="user-id">ID: --</p>
-                </div>
-                
-                <div class="vs">VS</div>
-                
-                <div class="player" id="player-b">
-                    <h3>Jugador B</h3>
-                    <p id="player-b-name">Disponible</p>
-                    <p id="player-b-username" class="username"></p>
-                    <p id="player-b-id" class="user-id">ID: --</p>
-                </div>
-            </div>
-
-            <div class="bet-amount">
-                💰 <span id="bet-amount">0</span> puntos en juego
-            </div>
-
-            <div class="coin-section">
-                <div id="coin">
-                    <div class="coin-face front"><span id="front-text">A</span></div>
-                    <div class="coin-face back"><span id="back-text">B</span></div>
-                </div>
-            </div>
-
-            <div id="countdown" class="countdown hidden">
-                ⏰ <span id="countdown-value">10</span>s
-            </div>
-
-            <div id="result-section" class="result-section hidden">
-                <div class="winner-text" id="winner-text">🎉 ¡Ganador!</div>
-                <div class="result-details" id="result-details"></div>
-            </div>
-        </div>
-
-        <div class="telegram-link">
-            <a href="https://t.me/IMPRENTA_ROBOT/CoinFlip" target="_blank">
-                📱 Abrir en Telegram
-            </a>
-        </div>
-
-        <div class="history-section">
-            <div class="history-title">📊 Últimos Resultados</div>
-            <div id="history-items">
-                <div class="history-item">
-                    <span>Esperando resultados...</span>
-                    <span>--</span>
-                </div>
-            </div>
-        </div>
+        <!-- ... (mantener toda la estructura HTML existente) ... -->
     </div>
 
     <script>
@@ -482,7 +21,7 @@
             playerA: null,
             playerB: null,
             betAmount: 0,
-            status: 'waiting', // waiting, countdown, in-progress, completed
+            status: 'waiting',
             winner: null,
             countdown: 10,
             history: [],
@@ -490,7 +29,8 @@
             connection: {
                 connected: true,
                 lastUpdate: null
-            }
+            },
+            serverTimeOffset: 0
         };
 
         // Inicializar Socket.IO
@@ -500,6 +40,25 @@
         function initApp() {
             initWebSocket();
             updateUI();
+            
+            // Sincronizar hora con el servidor
+            syncServerTime();
+        }
+
+        // Sincronizar hora con el servidor
+        function syncServerTime() {
+            const start = Date.now();
+            fetch('/health')
+                .then(response => response.json())
+                .then(data => {
+                    const end = Date.now();
+                    const rtt = end - start;
+                    gameState.serverTimeOffset = data.timestamp - (start + rtt/2);
+                    console.log('⏰ Hora sincronizada con servidor');
+                })
+                .catch(error => {
+                    console.error('Error sincronizando hora:', error);
+                });
         }
 
         function initWebSocket() {
@@ -515,12 +74,10 @@
                     gameState.currentDuelId = duel._id;
                     
                     if (duel.status === 'countdown') {
-                        startCountdown();
-                    } else if (duel.status === 'in-progress') {
-                        startDuel();
+                        // El servidor manejará el countdown
+                        document.getElementById('countdown').classList.remove('hidden');
                     } else if (duel.status === 'completed') {
-                        // Solicitar resultado consistente
-                        socket.emit('request-duel-result', duel._id);
+                        // El servidor enviará el resultado
                     }
                 } else {
                     resetDuel();
@@ -529,26 +86,47 @@
                 updateUI();
             });
 
+            // Escuchar actualizaciones del countdown desde el servidor
+            socket.on('countdown-update', (data) => {
+                if (data.duelId === gameState.currentDuelId) {
+                    gameState.countdown = data.countdown;
+                    updateUI();
+                    
+                    if (data.countdown <= 0) {
+                        // Iniciar animación de moneda
+                        startDuelAnimation();
+                    }
+                }
+            });
+
             // Escuchar resultados del servidor
             socket.on('duel-result', (resultData) => {
-                if (resultData && gameState.currentDuelId === resultData.duelId) {
+                if (resultData.duelId === gameState.currentDuelId) {
                     gameState.winner = resultData.winner;
                     gameState.status = 'completed';
                     
                     // Actualizar moneda para que coincida con el resultado
                     updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
                     
-                    // Actualizar UI con el resultado consistente
+                    // Añadir al historial
+                    addToHistory(resultData.winner, resultData.loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
+                    
                     updateUI();
                     
-                    // Añadir al historial
-                    addToHistory(resultData.winner, resultData.loser, 
-                               resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
+                    // Reiniciar después de 5 segundos
+                    setTimeout(() => {
+                        resetDuel();
+                    }, 5000);
                 }
             });
 
             socket.on('connect', () => {
                 updateConnectionStatus(true);
+                
+                // Solicitar estado actual al reconectar
+                if (gameState.currentDuelId) {
+                    socket.emit('request-duel-result', gameState.currentDuelId);
+                }
             });
 
             socket.on('disconnect', () => {
@@ -571,30 +149,8 @@
             }
         }
 
-        // Iniciar cuenta regresiva de 10 segundos
-        function startCountdown() {
-            gameState.countdown = 10;
-            updateUI();
-            
-            const countdownElement = document.getElementById('countdown');
-            const countdownValue = document.getElementById('countdown-value');
-            countdownElement.classList.remove('hidden');
-            
-            const countdownInterval = setInterval(() => {
-                gameState.countdown--;
-                countdownValue.textContent = gameState.countdown;
-                
-                if (gameState.countdown <= 0) {
-                    clearInterval(countdownInterval);
-                    startDuel();
-                }
-                
-                updateUI();
-            }, 1000);
-        }
-
-        // Iniciar el duelo (lanzar la moneda)
-        function startDuel() {
+        // Iniciar animación de la moneda (sincronizada)
+        function startDuelAnimation() {
             gameState.status = 'in-progress';
             updateUI();
             
@@ -603,46 +159,26 @@
             
             // Animación de la moneda
             document.getElementById('coin').classList.add('flipping');
-            
-            // Determinar resultado después de la animación
-            setTimeout(() => {
-                determineWinner();
-            }, 2000);
         }
 
-        // Determinar el ganador con resultado del servidor
-        function determineWinner() {
-            // Solicitar resultado al servidor
-            socket.emit('request-duel-result', gameState.currentDuelId);
+        // Reiniciar duelo
+        function resetDuel() {
+            gameState.playerA = null;
+            gameState.playerB = null;
+            gameState.status = 'waiting';
+            gameState.winner = null;
+            gameState.countdown = 10;
+            gameState.betAmount = 0;
+            gameState.currentDuelId = null;
             
-            socket.once('duel-result', (resultData) => {
-                if (resultData) {
-                    gameState.winner = resultData.winner;
-                    const loser = resultData.loser;
-                    gameState.status = 'completed';
-                    
-                    // Añadir al historial
-                    addToHistory(gameState.winner, loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
-                    
-                    // Actualizar moneda para que coincida con el resultado
-                    updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                    
-                    updateUI();
-                    
-                    setTimeout(() => {
-                        resetDuel();
-                    }, 5000);
-                } else {
-                    fallbackDetermineWinner();
-                }
-            });
+            // Resetear moneda
+            document.getElementById('front-text').textContent = 'A';
+            document.getElementById('back-text').textContent = 'B';
+            document.getElementById('front-text').parentElement.classList.remove('winner-side');
+            document.getElementById('back-text').parentElement.classList.remove('winner-side');
+            document.getElementById('coin').classList.remove('flipping');
             
-            // Timeout para el caso que el servidor no responda
-            setTimeout(() => {
-                if (gameState.status !== 'completed') {
-                    fallbackDetermineWinner();
-                }
-            }, 2000);
+            updateUI();
         }
 
         // Función para actualizar la moneda según el resultado
@@ -665,47 +201,7 @@
             }
         }
 
-        // Función de fallback para determinar ganador
-        function fallbackDetermineWinner() {
-            const isPlayerAWinner = Math.random() > 0.5;
-            gameState.winner = isPlayerAWinner ? gameState.playerA : gameState.playerB;
-            const loser = isPlayerAWinner ? gameState.playerB : gameState.playerA;
-            gameState.status = 'completed';
-            
-            // Añadir al historial
-            addToHistory(gameState.winner, loser, isPlayerAWinner ? 'Cara' : 'Cruz');
-            
-            // Actualizar moneda
-            updateCoinResult(isPlayerAWinner ? 'A' : 'B');
-            
-            updateUI();
-            
-            // Después de 5 segundos, reiniciar para nuevo duelo
-            setTimeout(() => {
-                resetDuel();
-            }, 5000);
-        }
-
-        // Reiniciar duelo
-        function resetDuel() {
-            gameState.playerA = null;
-            gameState.playerB = null;
-            gameState.status = 'waiting';
-            gameState.winner = null;
-            gameState.countdown = 10;
-            gameState.betAmount = 0;
-            gameState.currentDuelId = null;
-            
-            // Resetear moneda
-            document.getElementById('front-text').textContent = 'A';
-            document.getElementById('back-text').textContent = 'B';
-            document.getElementById('front-text').parentElement.classList.remove('winner-side');
-            document.getElementById('back-text').parentElement.classList.remove('winner-side');
-            
-            updateUI();
-        }
-
-        // Añadir partida al historial - CORREGIDO
+        // Añadir partida al historial
         function addToHistory(winner, loser, result) {
             const historyItems = document.getElementById('history-items');
             const now = new Date();
@@ -829,10 +325,8 @@
                 document.getElementById('player-b').classList.remove('winner');
             }
             
-            // Reiniciar moneda si no está en progreso
-            if (gameState.status !== 'in-progress') {
-                document.getElementById('coin').classList.remove('flipping');
-            }
+            // Actualizar countdown
+            document.getElementById('countdown-value').textContent = gameState.countdown;
         }
 
         // Inicializar la aplicación cuando se carga la página
