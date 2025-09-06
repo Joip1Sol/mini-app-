@@ -13,6 +13,7 @@
             --success-color: #4caf50;
             --warning-color: #ff9800;
             --error-color: #f44336;
+            --violet-color: #8a2be2;
             --bg-color: #f5f5f5;
             --card-bg: #ffffff;
             --text-color: #333333;
@@ -163,7 +164,7 @@
             font-size: 0.7rem;
             opacity: 0.6;
             margin-top: 5px;
-            color: #000000 !important; /* User ID siempre en negro */
+            color: #000000 !important;
         }
 
         .vs {
@@ -286,10 +287,16 @@
             border-bottom: 1px solid rgba(0, 0, 0, 0.1);
             display: flex;
             justify-content: space-between;
+            align-items: center;
         }
 
         .history-item:last-child {
             border-bottom: none;
+        }
+
+        .history-points {
+            color: var(--violet-color);
+            font-weight: bold;
         }
 
         .telegram-link {
@@ -332,21 +339,6 @@
 
         .instructions li {
             margin-bottom: 8px;
-        }
-
-        .clear-button {
-            text-align: center;
-            margin: 10px 0;
-        }
-
-        .clear-button button {
-            background: var(--warning-color);
-            border: none;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-weight: bold;
-            cursor: pointer;
         }
 
         @keyframes flip {
@@ -411,10 +403,6 @@
                 <li>Otro usuario puede unirse presionando "Unirse al Duelo"</li>
                 <li>El duelo comenzará automáticamente en 10 segundos</li>
             </ol>
-        </div>
-
-        <div class="clear-button">
-            <button onclick="clearDuel()">🔄 Reiniciar Duelo</button>
         </div>
 
         <div id="status-banner" class="status-banner status-waiting">
@@ -548,6 +536,7 @@
                     if (duel.status === 'countdown') {
                         // El servidor manejará el countdown
                         document.getElementById('countdown').classList.remove('hidden');
+                        document.getElementById('coin').classList.remove('flipping');
                         gameState.isNewDuel = false;
                     } else if (duel.status === 'completed' && !gameState.hasSeenAnimation) {
                         // Si el duelo está completado pero no hemos visto la animación
@@ -590,14 +579,14 @@
                         playCoinAnimation().then(() => {
                             gameState.hasSeenAnimation = true;
                             updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                            addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B');
+                            addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B', resultData.winnings);
                             updateUI();
                             showDuelResult();
                         });
                     } else {
                         // Si ya vimos la animación, solo mostrar el resultado
                         updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                        addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B');
+                        addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B', resultData.winnings);
                         updateUI();
                         showDuelResult();
                     }
@@ -741,10 +730,8 @@
         }
 
         // Añadir partida al historial
-        function addToHistory(winner, loser, result) {
+        function addToHistory(winner, loser, result, points) {
             const historyItems = document.getElementById('history-items');
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
             
             // Usar first_name, username o "Jugador" como fallback
             const winnerName = winner.first_name || winner.username || 'Ganador';
@@ -753,8 +740,8 @@
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             historyItem.innerHTML = `
-                <span>${winnerName} vs ${loserName}</span>
-                <span>${timeString} (${result})</span>
+                <span>${winnerName} vs ${loserName} (${result})</span>
+                <span class="history-points">+${points} puntos</span>
             `;
             
             if (historyItems.children.length === 1 && 
@@ -768,21 +755,8 @@
                 winner: winnerName,
                 loser: loserName,
                 result: result,
-                time: timeString
+                points: points
             });
-        }
-
-        // Función para limpiar manualmente
-        function clearDuel() {
-            fetch('/api/clear-duel', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    console.log('Duelo limpiado:', data);
-                    resetDuel();
-                })
-                .catch(error => {
-                    console.error('Error limpiando duelo:', error);
-                });
         }
 
         // Actualizar la interfaz de usuario
