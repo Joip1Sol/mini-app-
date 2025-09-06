@@ -163,6 +163,7 @@
             font-size: 0.7rem;
             opacity: 0.6;
             margin-top: 5px;
+            color: #000000 !important; /* User ID siempre en negro */
         }
 
         .vs {
@@ -493,7 +494,8 @@
                 lastUpdate: null
             },
             serverTimeOffset: 0,
-            hasSeenAnimation: false
+            hasSeenAnimation: false,
+            isNewDuel: true
         };
 
         // Inicializar Socket.IO
@@ -532,6 +534,8 @@
                     // Si es un duelo nuevo, reiniciar el estado de animación
                     if (!gameState.currentDuelId || gameState.currentDuelId !== duel._id) {
                         gameState.hasSeenAnimation = false;
+                        gameState.isNewDuel = true;
+                        resetCoinAnimation();
                     }
                     
                     gameState.playerA = duel.playerA;
@@ -544,6 +548,7 @@
                     if (duel.status === 'countdown') {
                         // El servidor manejará el countdown
                         document.getElementById('countdown').classList.remove('hidden');
+                        gameState.isNewDuel = false;
                     } else if (duel.status === 'completed' && !gameState.hasSeenAnimation) {
                         // Si el duelo está completado pero no hemos visto la animación
                         playCoinAnimation().then(() => {
@@ -585,14 +590,14 @@
                         playCoinAnimation().then(() => {
                             gameState.hasSeenAnimation = true;
                             updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                            addToHistory(resultData.winner, resultData.loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
+                            addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B');
                             updateUI();
                             showDuelResult();
                         });
                     } else {
                         // Si ya vimos la animación, solo mostrar el resultado
                         updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                        addToHistory(resultData.winner, resultData.loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
+                        addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B');
                         updateUI();
                         showDuelResult();
                     }
@@ -652,6 +657,16 @@
             });
         }
 
+        // Reiniciar animación de la moneda
+        function resetCoinAnimation() {
+            const coin = document.getElementById('coin');
+            coin.classList.remove('flipping');
+            document.getElementById('front-text').textContent = 'A';
+            document.getElementById('back-text').textContent = 'B';
+            document.getElementById('front-text').parentElement.classList.remove('winner-side');
+            document.getElementById('back-text').parentElement.classList.remove('winner-side');
+        }
+
         // Mostrar resultado del duelo
         function showDuelResult() {
             if (gameState.status === 'completed' && gameState.winner) {
@@ -669,7 +684,7 @@
                     <div>👑 <strong>Ganador:</strong> ${winnerName}${winnerUsername}</div>
                     <div>💔 <strong>Perdedor:</strong> ${loserName}${loserUsername}</div>
                     <div>💰 <strong>Premio:</strong> ${gameState.betAmount * 2} puntos</div>
-                    <div>🎯 <strong>Resultado:</strong> ${gameState.winner.telegramId === gameState.playerA.telegramId ? '🟡 Cara' : '⚫ Cruz'}</div>
+                    <div>🎯 <strong>Resultado:</strong> ${gameState.winner.telegramId === gameState.playerA.telegramId ? '🟡 Cara A' : '⚫ Cruz B'}</div>
                 `;
                 
                 // Marcar jugador ganador
@@ -697,13 +712,10 @@
             gameState.betAmount = 0;
             gameState.currentDuelId = null;
             gameState.hasSeenAnimation = false;
+            gameState.isNewDuel = true;
             
             // Resetear moneda
-            document.getElementById('front-text').textContent = 'A';
-            document.getElementById('back-text').textContent = 'B';
-            document.getElementById('front-text').parentElement.classList.remove('winner-side');
-            document.getElementById('back-text').parentElement.classList.remove('winner-side');
-            document.getElementById('coin').classList.remove('flipping');
+            resetCoinAnimation();
             
             updateUI();
         }
@@ -830,9 +842,11 @@
             } else {
                 resultSection.classList.add('hidden');
                 
-                // Quitar marca de ganador
-                document.getElementById('player-a').classList.remove('winner');
-                document.getElementById('player-b').classList.remove('winner');
+                // Quitar marca de ganador (pero mantener si ya hay un ganador)
+                if (!gameState.winner) {
+                    document.getElementById('player-a').classList.remove('winner');
+                    document.getElementById('player-b').classList.remove('winner');
+                }
             }
         }
 
