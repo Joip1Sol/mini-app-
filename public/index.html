@@ -153,20 +153,20 @@
             font-size: 1.1rem;
             font-weight: bold;
             margin: 5px 0;
-            color: #000000; /* Mismo color para todos los textos */
+            color: #000000;
         }
 
         .player .username {
             font-size: 0.9rem;
             opacity: 0.8;
-            color: #000000; /* Mismo color para username */
+            color: #000000;
         }
 
         .player .user-id {
             font-size: 0.7rem;
             opacity: 0.6;
             margin-top: 5px;
-            color: #000000 !important; /* User ID siempre en negro */
+            color: #000000;
         }
 
         .vs {
@@ -350,7 +350,7 @@
 
         @keyframes flip-to-b {
             0% { transform: rotateY(0deg); }
-            100% { transform: rotateY(1620deg); } /* 4.5 vueltas para terminar mostrando B */
+            100% { transform: rotateY(1980deg); } /* 5.5 vueltas para terminar mostrando B */
         }
 
         @keyframes fadeIn {
@@ -817,17 +817,29 @@
 
         // Actualizar la interfaz de usuario
         function updateUI() {
-            // Actualizar jugadores
+            // Actualizar jugadores - SOLO mostrar nombre real o "Esperando..."
             document.getElementById('player-a-name').textContent = 
                 gameState.playerA ? (gameState.playerA.first_name || 'Jugador A') : 'Esperando...';
             document.getElementById('player-b-name').textContent = 
                 gameState.playerB ? (gameState.playerB.first_name || 'Jugador B') : 'Disponible';
                 
-            // Actualizar usernames de jugadores
-            document.getElementById('player-a-username').textContent = 
-                gameState.playerA && gameState.playerA.username ? `@${gameState.playerA.username}` : '';
-            document.getElementById('player-b-username').textContent = 
-                gameState.playerB && gameState.playerB.username ? `@${gameState.playerB.username}` : '';
+            // Actualizar usernames de jugadores - solo mostrar si existe
+            const playerAUsername = document.getElementById('player-a-username');
+            const playerBUsername = document.getElementById('player-b-username');
+            
+            if (gameState.playerA && gameState.playerA.username) {
+                playerAUsername.textContent = `@${gameState.playerA.username}`;
+                playerAUsername.style.display = 'block';
+            } else {
+                playerAUsername.style.display = 'none';
+            }
+            
+            if (gameState.playerB && gameState.playerB.username) {
+                playerBUsername.textContent = `@${gameState.playerB.username}`;
+                playerBUsername.style.display = 'block';
+            } else {
+                playerBUsername.style.display = 'none';
+            }
                 
             // Actualizar IDs de jugadores
             document.getElementById('player-a-id').textContent = 
