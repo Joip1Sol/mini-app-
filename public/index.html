@@ -153,18 +153,20 @@
             font-size: 1.1rem;
             font-weight: bold;
             margin: 5px 0;
+            color: #000000; /* Mismo color para todos los textos */
         }
 
         .player .username {
             font-size: 0.9rem;
             opacity: 0.8;
+            color: #000000; /* Mismo color para username */
         }
 
         .player .user-id {
             font-size: 0.7rem;
             opacity: 0.6;
             margin-top: 5px;
-            color: #000000 !important;
+            color: #000000 !important; /* User ID siempre en negro */
         }
 
         .vs {
@@ -346,6 +348,11 @@
             100% { transform: rotateY(1800deg); }
         }
 
+        @keyframes flip-to-b {
+            0% { transform: rotateY(0deg); }
+            100% { transform: rotateY(1620deg); } /* 4.5 vueltas para terminar mostrando B */
+        }
+
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
@@ -353,6 +360,10 @@
 
         .flipping {
             animation: flip 2s ease-out forwards;
+        }
+
+        .flipping-to-b {
+            animation: flip-to-b 2s ease-out forwards;
         }
 
         .fade-in {
@@ -483,7 +494,8 @@
             },
             serverTimeOffset: 0,
             hasSeenAnimation: false,
-            isNewDuel: true
+            isNewDuel: true,
+            countdownInterval: null
         };
 
         // Inicializar Socket.IO
@@ -524,6 +536,7 @@
                         gameState.hasSeenAnimation = false;
                         gameState.isNewDuel = true;
                         resetCoinAnimation();
+                        clearCountdown();
                     }
                     
                     gameState.playerA = duel.playerA;
@@ -537,10 +550,18 @@
                         // El servidor manejará el countdown
                         document.getElementById('countdown').classList.remove('hidden');
                         document.getElementById('coin').classList.remove('flipping');
+                        document.getElementById('coin').classList.remove('flipping-to-b');
                         gameState.isNewDuel = false;
+                        
+                        // Iniciar countdown si no está activo
+                        if (!gameState.countdownInterval) {
+                            startCountdown();
+                        }
                     } else if (duel.status === 'completed' && !gameState.hasSeenAnimation) {
                         // Si el duelo está completado pero no hemos visto la animación
-                        playCoinAnimation().then(() => {
+                        clearCountdown();
+                        const winnerSide = duel.winner.telegramId === duel.playerA.telegramId ? 'A' : 'B';
+                        playCoinAnimation(winnerSide).then(() => {
                             gameState.hasSeenAnimation = true;
                             showDuelResult();
                         });
@@ -559,11 +580,8 @@
                     updateUI();
                     
                     if (data.countdown <= 0) {
-                        // Iniciar animación de moneda
-                        playCoinAnimation().then(() => {
-                            // Después de la animación, solicitar resultado
-                            socket.emit('request-duel-result', gameState.currentDuelId);
-                        });
+                        clearCountdown();
+                        // El resultado vendrá del servidor
                     }
                 }
             });
@@ -576,17 +594,23 @@
                     
                     // Si no hemos visto la animación, reproducirla antes de mostrar el resultado
                     if (!gameState.hasSeenAnimation) {
-                        playCoinAnimation().then(() => {
+                        const winnerSide = resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B';
+                        playCoinAnimation(winnerSide).then(() => {
                             gameState.hasSeenAnimation = true;
-                            updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                            addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B', resultData.winnings);
+                            updateCoinResult(winnerSide);
+                            addToHistory(resultData.winner, resultData.loser, 
+                                       resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B', 
+                                       resultData.winnings);
                             updateUI();
                             showDuelResult();
                         });
                     } else {
                         // Si ya vimos la animación, solo mostrar el resultado
-                        updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                        addToHistory(resultData.winner, resultData.loser, resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B', resultData.winnings);
+                        const winnerSide = resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B';
+                        updateCoinResult(winnerSide);
+                        addToHistory(resultData.winner, resultData.loser, 
+                                   resultData.winner.telegramId === gameState.playerA.telegramId ? 'Cara A' : 'Cruz B', 
+                                   resultData.winnings);
                         updateUI();
                         showDuelResult();
                     }
@@ -607,6 +631,30 @@
             });
         }
 
+        // Iniciar cuenta regresiva
+        function startCountdown() {
+            clearCountdown();
+            gameState.countdown = 10;
+            updateUI();
+            
+            gameState.countdownInterval = setInterval(() => {
+                gameState.countdown--;
+                updateUI();
+                
+                if (gameState.countdown <= 0) {
+                    clearCountdown();
+                }
+            }, 1000);
+        }
+
+        // Limpiar cuenta regresiva
+        function clearCountdown() {
+            if (gameState.countdownInterval) {
+                clearInterval(gameState.countdownInterval);
+                gameState.countdownInterval = null;
+            }
+        }
+
         // Actualizar estado de conexión
         function updateConnectionStatus(connected) {
             const connectionStatus = document.getElementById('connection-status');
@@ -623,7 +671,7 @@
         }
 
         // Reproducir animación de la moneda
-        function playCoinAnimation() {
+        function playCoinAnimation(winnerSide) {
             return new Promise((resolve) => {
                 gameState.status = 'in-progress';
                 updateUI();
@@ -634,10 +682,15 @@
                 // Reiniciar animación
                 const coin = document.getElementById('coin');
                 coin.classList.remove('flipping');
+                coin.classList.remove('flipping-to-b');
                 void coin.offsetWidth; // Trigger reflow
                 
-                // Aplicar animación
-                coin.classList.add('flipping');
+                // Aplicar animación según el ganador
+                if (winnerSide === 'A') {
+                    coin.classList.add('flipping');
+                } else {
+                    coin.classList.add('flipping-to-b');
+                }
                 
                 // Resolver la promesa cuando termine la animación
                 setTimeout(() => {
@@ -650,6 +703,7 @@
         function resetCoinAnimation() {
             const coin = document.getElementById('coin');
             coin.classList.remove('flipping');
+            coin.classList.remove('flipping-to-b');
             document.getElementById('front-text').textContent = 'A';
             document.getElementById('back-text').textContent = 'B';
             document.getElementById('front-text').parentElement.classList.remove('winner-side');
@@ -702,6 +756,8 @@
             gameState.currentDuelId = null;
             gameState.hasSeenAnimation = false;
             gameState.isNewDuel = true;
+            
+            clearCountdown();
             
             // Resetear moneda
             resetCoinAnimation();
