@@ -493,7 +493,7 @@
                 lastUpdate: null
             },
             serverTimeOffset: 0,
-            animationInProgress: false
+            hasSeenAnimation: false
         };
 
         // Inicializar Socket.IO
@@ -529,32 +529,27 @@
                 console.log('📨 Recibiendo actualización del backend...', duel);
                 
                 if (duel) {
-                    // Solo actualizar si es un duelo nuevo o diferente
+                    // Si es un duelo nuevo, reiniciar el estado de animación
                     if (!gameState.currentDuelId || gameState.currentDuelId !== duel._id) {
-                        gameState.playerA = duel.playerA;
-                        gameState.playerB = duel.playerB;
-                        gameState.betAmount = duel.betAmount;
-                        gameState.status = duel.status;
-                        gameState.winner = duel.winner;
-                        gameState.currentDuelId = duel._id;
-                        
-                        // Reiniciar animación si es un nuevo duelo
-                        document.getElementById('coin').classList.remove('flipping');
-                        gameState.animationInProgress = false;
-                        
-                        if (duel.status === 'countdown') {
-                            // El servidor manejará el countdown
-                            document.getElementById('countdown').classList.remove('hidden');
-                        }
-                    } else if (duel.status === 'completed' && gameState.status !== 'completed') {
-                        // Si el servidor marca el duelo como completado pero el cliente no lo ha procesado
-                        gameState.status = 'completed';
-                        gameState.winner = duel.winner;
-                        
-                        // Si la animación no está en progreso, mostrar el resultado
-                        if (!gameState.animationInProgress) {
+                        gameState.hasSeenAnimation = false;
+                    }
+                    
+                    gameState.playerA = duel.playerA;
+                    gameState.playerB = duel.playerB;
+                    gameState.betAmount = duel.betAmount;
+                    gameState.status = duel.status;
+                    gameState.winner = duel.winner;
+                    gameState.currentDuelId = duel._id;
+                    
+                    if (duel.status === 'countdown') {
+                        // El servidor manejará el countdown
+                        document.getElementById('countdown').classList.remove('hidden');
+                    } else if (duel.status === 'completed' && !gameState.hasSeenAnimation) {
+                        // Si el duelo está completado pero no hemos visto la animación
+                        playCoinAnimation().then(() => {
+                            gameState.hasSeenAnimation = true;
                             showDuelResult();
-                        }
+                        });
                     }
                 } else {
                     resetDuel();
@@ -571,7 +566,10 @@
                     
                     if (data.countdown <= 0) {
                         // Iniciar animación de moneda
-                        startDuelAnimation();
+                        playCoinAnimation().then(() => {
+                            // Después de la animación, solicitar resultado
+                            socket.emit('request-duel-result', gameState.currentDuelId);
+                        });
                     }
                 }
             });
@@ -579,27 +577,24 @@
             // Escuchar resultados del servidor
             socket.on('duel-result', (resultData) => {
                 if (resultData && gameState.currentDuelId === resultData.duelId) {
-                    // Solo procesar si no tenemos ya un ganador
-                    if (!gameState.winner) {
-                        gameState.winner = resultData.winner;
-                        gameState.status = 'completed';
-                        
-                        // Si la animación está en progreso, esperar a que termine
-                        if (gameState.animationInProgress) {
-                            // El resultado se mostrará al finalizar la animación
-                            setTimeout(() => {
-                                updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
-                                addToHistory(resultData.winner, resultData.loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
-                                updateUI();
-                                showDuelResult();
-                            }, 2000);
-                        } else {
-                            // Si no hay animación en progreso, mostrar resultado inmediatamente
+                    gameState.winner = resultData.winner;
+                    gameState.status = 'completed';
+                    
+                    // Si no hemos visto la animación, reproducirla antes de mostrar el resultado
+                    if (!gameState.hasSeenAnimation) {
+                        playCoinAnimation().then(() => {
+                            gameState.hasSeenAnimation = true;
                             updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
                             addToHistory(resultData.winner, resultData.loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
                             updateUI();
                             showDuelResult();
-                        }
+                        });
+                    } else {
+                        // Si ya vimos la animación, solo mostrar el resultado
+                        updateCoinResult(resultData.winner.telegramId === gameState.playerA.telegramId ? 'A' : 'B');
+                        addToHistory(resultData.winner, resultData.loser, resultData.resultText === 'heads' ? 'Cara' : 'Cruz');
+                        updateUI();
+                        showDuelResult();
                     }
                 }
             });
@@ -633,27 +628,28 @@
             }
         }
 
-        // Iniciar animación de la moneda (sincronizada)
-        function startDuelAnimation() {
-            gameState.status = 'in-progress';
-            gameState.animationInProgress = true;
-            updateUI();
-            
-            // Ocultar countdown
-            document.getElementById('countdown').classList.add('hidden');
-            
-            // Animación de la moneda
-            document.getElementById('coin').classList.add('flipping');
-            
-            // Marcar que la animación ha terminado después de 2 segundos
-            setTimeout(() => {
-                gameState.animationInProgress = false;
+        // Reproducir animación de la moneda
+        function playCoinAnimation() {
+            return new Promise((resolve) => {
+                gameState.status = 'in-progress';
+                updateUI();
                 
-                // Si ya tenemos un ganador, mostrar el resultado
-                if (gameState.winner) {
-                    showDuelResult();
-                }
-            }, 2000);
+                // Ocultar countdown
+                document.getElementById('countdown').classList.add('hidden');
+                
+                // Reiniciar animación
+                const coin = document.getElementById('coin');
+                coin.classList.remove('flipping');
+                void coin.offsetWidth; // Trigger reflow
+                
+                // Aplicar animación
+                coin.classList.add('flipping');
+                
+                // Resolver la promesa cuando termine la animación
+                setTimeout(() => {
+                    resolve();
+                }, 2000);
+            });
         }
 
         // Mostrar resultado del duelo
@@ -700,7 +696,7 @@
             gameState.countdown = 10;
             gameState.betAmount = 0;
             gameState.currentDuelId = null;
-            gameState.animationInProgress = false;
+            gameState.hasSeenAnimation = false;
             
             // Resetear moneda
             document.getElementById('front-text').textContent = 'A';
